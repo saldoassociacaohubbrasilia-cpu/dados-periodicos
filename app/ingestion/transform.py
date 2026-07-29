@@ -10,8 +10,13 @@ from app.institutions import get_institution
 
 logger = logging.getLogger("transform")
 
-TRILHA_EXTERNAL_ID = "41"
-TRILHA_NOME = "Trilha Saldo+"
+# Trilhas acompanhadas pelo dashboard. Chave = CourseId na Ludos,
+# valor = nome de exibição. Pra adicionar uma trilha nova no futuro,
+# basta incluir aqui — rebuild_metrics já processa todas sozinho.
+TRILHAS: dict[str, str] = {
+    "41": "Trilha Saldo+",
+    "43": "Trilha Pocket",
+}
 
 
 def _latest_payload(db: Session, endpoint: str):
@@ -64,6 +69,7 @@ def _upsert_students(db: Session, players: list) -> tuple[dict[str, Student], di
         seen_this_run[external_id] = student
         student.login = login
         student.name = _field(p, "playerName", "name", "nome")
+        student.account_status = _field(p, "status", default=None)
         external_ids.append(external_id)
 
         grupos = _field(p, "groups", default=[]) or []
@@ -116,13 +122,14 @@ def _parse_iso(valor) -> "dt.datetime | None":
 
 
 def _upsert_progress(
-    db: Session, student_id: int, progress_pct: float, status: str,
+    db: Session, student_id: int, trilha_id: str, trilha_nome: str,
+    progress_pct: float, status: str,
     started_at: "dt.datetime | None" = None, completed_at: "dt.datetime | None" = None,
 ) -> None:
     row = db.execute(
         select(StudentProgress).where(
             StudentProgress.student_id == student_id,
-            StudentProgress.trail_external_id == TRILHA_EXTERNAL_ID,
+            StudentProgress.trail_external_id == trilha_id,
         )
     ).scalar_one_or_none()
 
@@ -130,8 +137,8 @@ def _upsert_progress(
     if row is None:
         row = StudentProgress(
             student_id=student_id,
-            trail_external_id=TRILHA_EXTERNAL_ID,
-            trail_name=TRILHA_NOME,
+            trail_external_id=trilha_id,
+            trail_name=trilha_nome,
             progress_pct=progress_pct,
             status=status,
             started_at=started_at or now,
@@ -148,44 +155,41 @@ def _upsert_progress(
             row.completed_at = completed_at or now
 
 
-def rebuild_metrics(db: Session) -> None:
-    """
-    Recalcula os agregados considerando estritamente a TRILHA SALDO+ (CourseId 41):
-    extrai dinamicamente escolas/turmas (GroupName), vincula cada aluno à sua
-    turma e grava o progresso individual dele — além dos rollups gerais, por
-    módulo e por escola/turma (cada um também por instituição) usados no dashboard.
-    """
-    players = _latest_payload(db, "/report/players") or []
-    performance = _latest_payload(db, "/report/performance") or []
-
-    students_by_id, player_extra = _upsert_students(db, players)
-    school_turma_cache: dict = {}
-
-    # --- Estruturas por instituição ('todas' sempre agrega tudo) ---
+def _process_trilha(
+    db: Session, performance: list, trilha_id: str, trilha_nome: str,
+    player_extra: dict, students_by_id: dict, school_turma_cache: dict,
+) -> None:
+    """Processa uma trilha (CourseId) inteira: filtra o /report/performance
+    pra esse curso, calcula os rollups (geral, módulo, escola/turma) e
+    grava tudo em MetricSnapshot já marcado com esse trilha_id — sem
+    misturar números de trilhas diferentes."""
     inscritos_ids: dict[str, set] = defaultdict(set)
     engaged_ids: dict[str, set] = defaultdict(set)
     completed_ids: dict[str, set] = defaultdict(set)
     module_counts: dict[str, Counter] = defaultdict(Counter)
-
-    # --- Estrutura por escola/turma (GroupName) ---
     group_stats: dict[str, dict] = defaultdict(lambda: {
         "inscritos": set(), "engajados": set(), "concluintes": set(),
         "pontuacao_total": 0.0, "pontuacao_n": 0,
     })
-
-    # Garante que 'todas' sempre existe, mesmo que o payload venha vazio ou
-    # sem nenhum registro do CourseId 41 — assim o rollup geral sempre grava
-    # um snapshot fresco (ainda que zerado) e o /overview nunca mostra um
-    # sync antigo como se fosse o mais recente.
+    # Garante que 'todas' sempre existe, mesmo com payload vazio — assim
+    # o rollup geral sempre grava um snapshot fresco (ainda que zerado)
+    # e o /overview nunca mostra um sync antigo como se fosse o mais recente.
     inscritos_ids["todas"]
 
     for perf in performance:
         course_id = _field(perf, "courseId", "CourseId", "course_id", "id_curso")
-        if course_id is not None and str(course_id) != "41":
+        if course_id is not None and str(course_id) != trilha_id:
             continue
 
         external_id = str(_field(perf, "playerId", "player_id", "id", "PlayerId", default=""))
         if not external_id:
+            continue
+
+        # Só conta aluno com conta ATIVA na Ludos — quando o semestre
+        # vira e a Ludos marca o aluno antigo como BLOCKED/INACTIVE, ele
+        # some dos KPIs sozinho, sem precisar apagar nada do banco.
+        student_account = students_by_id.get(external_id)
+        if student_account is not None and student_account.account_status in ("BLOCKED", "INACTIVE"):
             continue
 
         # Turma (GroupName) e pontuação não vêm no /report/performance — a
@@ -229,7 +233,7 @@ def rebuild_metrics(db: Session) -> None:
             student.school_id = school.id
             student.turma_id = turma.id
             _upsert_progress(
-                db, student.id, progress, status,
+                db, student.id, trilha_id, trilha_nome, progress, status,
                 started_at=_parse_iso(started_raw), completed_at=_parse_iso(completed_raw),
             )
 
@@ -244,9 +248,10 @@ def rebuild_metrics(db: Session) -> None:
         db.add(MetricSnapshot(
             snapshot_date=now,
             scope_type="geral",
-            scope_id="trilha_saldo_41",
-            scope_label=TRILHA_NOME,
+            scope_id=f"trilha_{trilha_id}",
+            scope_label=trilha_nome,
             institution=scope,
+            trilha_id=trilha_id,
             inscritos=total_inscritos,
             engajados=total_engajados,
             concluintes=total_concluintes,
@@ -265,6 +270,7 @@ def rebuild_metrics(db: Session) -> None:
                 scope_id=mod_name,
                 scope_label=f"Módulo {mod_name}",
                 institution=scope,
+                trilha_id=trilha_id,
                 inscritos=len(inscritos_ids[scope]),
                 engajados=count,
                 concluintes=0,
@@ -288,6 +294,7 @@ def rebuild_metrics(db: Session) -> None:
                 scope_id=group_name,
                 scope_label=group_name,
                 institution=scope,
+                trilha_id=trilha_id,
                 inscritos=n_inscritos,
                 engajados=n_engajados,
                 concluintes=n_concluintes,
@@ -297,10 +304,34 @@ def rebuild_metrics(db: Session) -> None:
                 pontuacao_media=pontuacao_media,
             ))
 
-    db.commit()
     logger.info(
-        "Métricas da Trilha Saldo+ recalculadas: %s inscritos únicos, %s engajados, %s escolas/turmas",
+        "%s recalculada: %s inscritos únicos, %s engajados, %s escolas/turmas",
+        trilha_nome,
         len(inscritos_ids.get("todas", set())),
         len(engaged_ids.get("todas", set()) & inscritos_ids.get("todas", set())),
         len(group_stats),
     )
+
+
+def rebuild_metrics(db: Session) -> None:
+    """
+    Recalcula os agregados de TODAS as trilhas em TRILHAS (hoje: Saldo+ e
+    Pocket): extrai dinamicamente escolas/turmas (GroupName) por trilha,
+    vincula cada aluno à sua turma e grava o progresso individual dele —
+    além dos rollups gerais, por módulo e por escola/turma (cada um
+    também por instituição), usados no dashboard, com trilha_id marcado
+    em cada linha pra não misturar números de trilhas diferentes.
+    """
+    players = _latest_payload(db, "/report/players") or []
+    performance = _latest_payload(db, "/report/performance") or []
+
+    students_by_id, player_extra = _upsert_students(db, players)
+    school_turma_cache: dict = {}
+
+    for trilha_id, trilha_nome in TRILHAS.items():
+        _process_trilha(
+            db, performance, trilha_id, trilha_nome,
+            player_extra, students_by_id, school_turma_cache,
+        )
+
+    db.commit()

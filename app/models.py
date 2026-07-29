@@ -77,6 +77,13 @@ class Student(Base):
     school_id: Mapped[Optional[int]] = mapped_column(ForeignKey("school.id"), nullable=True)
     turma_id: Mapped[Optional[int]] = mapped_column(ForeignKey("turma.id"), nullable=True)
     enrolled_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Status da CONTA do aluno na Ludos: "ACTIVE" | "BLOCKED" | "INACTIVE".
+    # Vem de /report/players (campo "status"). Não confundir com o
+    # status de progresso em StudentProgress, que é sobre a trilha, não
+    # sobre a conta. Quando um semestre termina, a Ludos costuma marcar
+    # os alunos antigos como BLOCKED — é esse campo que o dashboard usa
+    # pra mostrar só quem está ativo no período corrente.
+    account_status: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
 
     progress_records: Mapped[list["StudentProgress"]] = relationship(back_populates="student")
 
@@ -125,6 +132,11 @@ class MetricSnapshot(Base):
     # ou módulo) é gravada tanto para "todas" quanto para a instituição
     # real do registro, permitindo filtrar sem reprocessar o JSON bruto.
     institution: Mapped[str] = mapped_column(String(20), default="todas", index=True)
+
+    # ID da trilha na Ludos (ex: "41" = Trilha Saldo+, "43" = Trilha
+    # Pocket) — cada trilha é um curso separado na Ludos, com seus
+    # próprios inscritos/engajados. Ver app/ingestion/transform.py:TRILHAS.
+    trilha_id: Mapped[str] = mapped_column(String(20), default="41", index=True)
 
     inscritos: Mapped[int] = mapped_column(Integer, default=0)
     engajados: Mapped[int] = mapped_column(Integer, default=0)

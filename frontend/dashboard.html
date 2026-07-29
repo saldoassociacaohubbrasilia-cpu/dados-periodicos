@@ -89,7 +89,7 @@
             letter-spacing: 0.04em;
         }
 
-        select#instituicao-select {
+        select#instituicao-select, select#trilha-select {
             appearance: none;
             -webkit-appearance: none;
             font-family: inherit;
@@ -105,7 +105,7 @@
             cursor: pointer;
         }
 
-        select#instituicao-select:focus-visible {
+        select#instituicao-select:focus-visible, select#trilha-select:focus-visible {
             outline: 2px solid var(--cyan);
             outline-offset: 2px;
         }
@@ -425,6 +425,11 @@
             <p class="subtitle">Painel de acompanhamento — Trilha Saldo+</p>
         </div>
         <div class="filter-bar">
+            <label class="filter-label" for="trilha-select">Trilha</label>
+            <select id="trilha-select">
+                <option value="41">Trilha Saldo+</option>
+                <option value="43">Trilha Pocket</option>
+            </select>
             <label class="filter-label" for="instituicao-select">Instituição</label>
             <select id="instituicao-select">
                 <option value="todas">Todas as Instituições</option>

@@ -10,6 +10,10 @@ from app.institutions import normalize_institution, SCHOOL_COORDINATES
 
 router = APIRouter(prefix="/api/v1", tags=["dashboard"])
 
+# Trilhas disponíveis pro parâmetro `trilha` dos endpoints abaixo. Ver
+# app/ingestion/transform.py:TRILHAS — precisa bater com as mesmas chaves.
+TRILHA_PADRAO = "41"
+
 EMPTY_DASHBOARD = {
     "kpis": {
         "escolas": 0, "inscritos": 0, "engajados": 0,
@@ -19,15 +23,27 @@ EMPTY_DASHBOARD = {
 }
 
 
+def _latest_date_for_trilha(db: Session, trilha_id: str):
+    """Data do snapshot mais recente PARA ESSA TRILHA especificamente —
+    nunca usar max(snapshot_date) sem filtrar por trilha_id, senão uma
+    trilha processada por último (ex: Pocket depois de Saldo+ na mesma
+    rodada de sync) "esconde" os dados da outra por ter timestamp maior."""
+    return db.execute(
+        select(func.max(MetricSnapshot.snapshot_date))
+        .where(MetricSnapshot.trilha_id == trilha_id)
+    ).scalar()
+
+
 @router.get("/dashboard")
-def get_full_dashboard(instituicao: str = "todas", db: Session = Depends(get_db)):
+def get_full_dashboard(instituicao: str = "todas", trilha: str = TRILHA_PADRAO, db: Session = Depends(get_db)):
     """
-    Painel unificado da Trilha Saldo+ (CourseId 41), filtrado pela
-    instituição selecionada ('todas' | 'secretaria' | 'cvp').
+    Painel unificado de uma trilha (default: Saldo+, CourseId 41),
+    filtrado pela instituição selecionada ('todas' | 'secretaria' | 'cvp').
+    Passe ?trilha=43 para ver a Trilha Pocket.
     """
     inst = normalize_institution(instituicao)
 
-    latest_date = db.execute(select(func.max(MetricSnapshot.snapshot_date))).scalar()
+    latest_date = _latest_date_for_trilha(db, trilha)
     if not latest_date:
         return EMPTY_DASHBOARD
 
@@ -36,6 +52,7 @@ def get_full_dashboard(instituicao: str = "todas", db: Session = Depends(get_db)
             MetricSnapshot.snapshot_date == latest_date,
             MetricSnapshot.scope_type == "geral",
             MetricSnapshot.institution == inst,
+            MetricSnapshot.trilha_id == trilha,
         )
     ).scalar_one_or_none()
 
@@ -45,6 +62,7 @@ def get_full_dashboard(instituicao: str = "todas", db: Session = Depends(get_db)
             MetricSnapshot.snapshot_date == latest_date,
             MetricSnapshot.scope_type == "escola",
             MetricSnapshot.institution == inst,
+            MetricSnapshot.trilha_id == trilha,
         )
         .order_by(MetricSnapshot.inscritos.desc())
     ).scalars().all()
@@ -55,6 +73,7 @@ def get_full_dashboard(instituicao: str = "todas", db: Session = Depends(get_db)
             MetricSnapshot.snapshot_date == latest_date,
             MetricSnapshot.scope_type == "trilha",
             MetricSnapshot.institution == inst,
+            MetricSnapshot.trilha_id == trilha,
         )
         .order_by(MetricSnapshot.engajados.desc())
     ).scalars().all()
@@ -116,11 +135,15 @@ def get_full_dashboard(instituicao: str = "todas", db: Session = Depends(get_db)
 
 
 @router.get("/overview", response_model=OverviewOut)
-def get_overview(instituicao: str = "todas", db: Session = Depends(get_db)):
+def get_overview(instituicao: str = "todas", trilha: str = TRILHA_PADRAO, db: Session = Depends(get_db)):
     inst = normalize_institution(instituicao)
     latest = db.execute(
         select(MetricSnapshot)
-        .where(MetricSnapshot.scope_type == "geral", MetricSnapshot.institution == inst)
+        .where(
+            MetricSnapshot.scope_type == "geral",
+            MetricSnapshot.institution == inst,
+            MetricSnapshot.trilha_id == trilha,
+        )
         .order_by(MetricSnapshot.snapshot_date.desc())
         .limit(1)
     ).scalar_one_or_none()
@@ -144,9 +167,9 @@ def get_overview(instituicao: str = "todas", db: Session = Depends(get_db)):
 
 
 @router.get("/trails", response_model=list[TrailShareOut])
-def get_trail_shares(instituicao: str = "todas", db: Session = Depends(get_db)):
+def get_trail_shares(instituicao: str = "todas", trilha: str = TRILHA_PADRAO, db: Session = Depends(get_db)):
     inst = normalize_institution(instituicao)
-    latest_date = db.execute(select(func.max(MetricSnapshot.snapshot_date))).scalar()
+    latest_date = _latest_date_for_trilha(db, trilha)
     if latest_date is None:
         return []
 
@@ -156,6 +179,7 @@ def get_trail_shares(instituicao: str = "todas", db: Session = Depends(get_db)):
             MetricSnapshot.snapshot_date == latest_date,
             MetricSnapshot.scope_type == "trilha",
             MetricSnapshot.institution == inst,
+            MetricSnapshot.trilha_id == trilha,
         )
     ).scalars().all()
 
@@ -166,14 +190,15 @@ def get_trail_shares(instituicao: str = "todas", db: Session = Depends(get_db)):
 
 
 @router.get("/ranking")
-def get_ranking(instituicao: str = "todas", db: Session = Depends(get_db)):
+def get_ranking(instituicao: str = "todas", trilha: str = TRILHA_PADRAO, db: Session = Depends(get_db)):
     """
     Ranking de escolas/turmas ordenado por taxa de engajamento (não por
     quantidade de inscritos, como o /dashboard). Pensado pra apresentação
     à Secretaria: mostra quem está engajando bem e quem está patinando.
+    Passe ?trilha=43 para ver o ranking da Trilha Pocket.
     """
     inst = normalize_institution(instituicao)
-    latest_date = db.execute(select(func.max(MetricSnapshot.snapshot_date))).scalar()
+    latest_date = _latest_date_for_trilha(db, trilha)
     if not latest_date:
         return {"ranking": []}
 
@@ -183,6 +208,7 @@ def get_ranking(instituicao: str = "todas", db: Session = Depends(get_db)):
             MetricSnapshot.snapshot_date == latest_date,
             MetricSnapshot.scope_type == "escola",
             MetricSnapshot.institution == inst,
+            MetricSnapshot.trilha_id == trilha,
         )
         .order_by(MetricSnapshot.taxa_ativacao.desc())
     ).scalars().all()

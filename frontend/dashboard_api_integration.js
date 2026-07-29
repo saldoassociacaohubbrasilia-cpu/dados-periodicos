@@ -3,7 +3,7 @@
 // Cores da Paleta Saldo+: Navy, Cyan, Orange, Magenta
 // ============================================================
 
-const API_BASE = 'https://dados-periodicos.onrender.com/api/v1';
+const API_BASE = 'http://localhost:8000/api/v1';
 const NAVY = '#002364', CYAN = '#06B6D4', ORANGE = '#F97316', MAGENTA = '#D946EF';
 
 Chart.defaults.font.family = "'Poppins', system-ui, sans-serif";
@@ -147,13 +147,13 @@ function renderizarTabelaTurmas(turmas) {
 }
 
 // --- Função Principal: Buscar e Atualizar o Dashboard ---
-async function carregarDashboard(instituicaoId) {
+async function carregarDashboard(instituicaoId, trilhaId) {
     try {
         // Inicializa o mapa vazio na primeira carga
         inicializarMapa();
 
         // Bate na API real do seu backend Python!
-        const res = await fetch(`${API_BASE}/dashboard?instituicao=${instituicaoId}`);
+        const res = await fetch(`${API_BASE}/dashboard?instituicao=${instituicaoId}&trilha=${trilhaId}`);
 
         if (!res.ok) {
             throw new Error(`Erro na API: ${res.status}`);
@@ -249,15 +249,17 @@ function fecharModalTurma() {
 // Event Listeners
 document.addEventListener('DOMContentLoaded', () => {
     const selectFiltro = document.getElementById('instituicao-select');
+    const selectTrilha = document.getElementById('trilha-select');
 
-    // Carrega o painel inicialmente com o valor padrão do filtro
-    carregarDashboard(selectFiltro.value);
+    // Carrega o painel inicialmente com os valores padrão dos filtros
+    carregarDashboard(selectFiltro.value, selectTrilha.value);
 
-    // Reage à mudança do filtro
+    // Reage à mudança de qualquer um dos dois filtros
     selectFiltro.addEventListener('change', (e) => {
-        const instituicaoSelecionada = e.target.value;
-        // Chama a API passando a nova instituição para filtrar
-        carregarDashboard(instituicaoSelecionada);
+        carregarDashboard(e.target.value, selectTrilha.value);
+    });
+    selectTrilha.addEventListener('change', (e) => {
+        carregarDashboard(selectFiltro.value, e.target.value);
     });
 
     // Delegação de clique: os botões "Ver Alunos" são recriados a cada carregamento
