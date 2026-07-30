@@ -4,7 +4,7 @@
 // ============================================================
 
 const API_BASE = 'http://localhost:8000/api/v1';
-const NAVY = '#002364', CYAN = '#06B6D4', ORANGE = '#F97316', MAGENTA = '#D946EF';
+const NAVY = '#002364', CYAN = '#11B2A8', ORANGE = '#F98105', MAGENTA = '#E72485';
 
 Chart.defaults.font.family = "'Poppins', system-ui, sans-serif";
 Chart.defaults.color = '#64748B';
@@ -72,6 +72,11 @@ function atualizarMapa(dadosEscolas) {
 
 // --- Renderização de Gráficos (Chart.js) ---
 function renderizarGraficos(dadosEscolas, dadosModulos) {
+    // Ranking de verdade: ordena por % de engajamento (não por
+    // quantidade de inscritos, que é só o tamanho da turma) — assim o
+    // gráfico mostra quem está engajando melhor, do topo pra base.
+    const escolasRankeadas = [...dadosEscolas].sort((a, b) => b.engajamento_pct - a.engajamento_pct);
+
     // Gráfico de Ranking de Escolas
     const ctxEscolas = document.getElementById('cEngajamentoEscola');
     if (chartEscolas) chartEscolas.destroy();
@@ -79,11 +84,11 @@ function renderizarGraficos(dadosEscolas, dadosModulos) {
     chartEscolas = new Chart(ctxEscolas, {
         type: 'bar',
         data: {
-            labels: dadosEscolas.map(e => e.nome),
+            labels: escolasRankeadas.map(e => e.nome),
             datasets: [{
                 label: '% de Engajamento',
-                data: dadosEscolas.map(e => e.engajamento_pct),
-                backgroundColor: dadosEscolas.map((_, i) => PALETA[i % PALETA.length]),
+                data: escolasRankeadas.map(e => e.engajamento_pct),
+                backgroundColor: escolasRankeadas.map((_, i) => PALETA[i % PALETA.length]),
                 borderRadius: 8,
                 maxBarThickness: 42
             }]
@@ -224,12 +229,15 @@ function abrirModalTurma(nomeTurma) {
             dados.alunos.forEach(a => {
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
+                    <td style="font-weight: 600; color: ${ORANGE};">${a.posicao_na_turma}º</td>
                     <td style="font-weight: 600;">${a.nome}</td>
                     <td>${a.login}</td>
                     <td>
                         <div class="progress-track"><div class="progress-fill" style="width:${a.progresso_pct}%;"></div></div>
                         <small>${fmtPct(a.progresso_pct)}</small>
                     </td>
+                    <td>${fmtInt(a.pontos)}</td>
+                    <td>${fmtInt(a.moedas)}</td>
                     <td>${a.status}</td>
                 `;
                 tbody.appendChild(tr);

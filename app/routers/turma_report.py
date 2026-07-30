@@ -44,6 +44,8 @@ def _buscar_relatorio_turma(db: Session, nome: str) -> dict:
             "nome": aluno.name or aluno.login,
             "login": aluno.login,
             "progresso_pct": round(progresso.progress_pct, 1) if progresso else 0.0,
+            "pontos": aluno.pontos if aluno.pontos is not None else 0,
+            "moedas": aluno.moedas if aluno.moedas is not None else 0,
             "status": STATUS_LABEL.get(status, status),
             "concluido_em": (
                 progresso.completed_at.strftime("%d/%m/%Y")
@@ -51,7 +53,11 @@ def _buscar_relatorio_turma(db: Session, nome: str) -> dict:
             ),
         })
 
-    linhas.sort(key=lambda l: l["nome"].lower())
+    # Ranking dos mais engajados da turma: progresso na trilha primeiro,
+    # pontos e moedas como desempate — não mais ordem alfabética.
+    linhas.sort(key=lambda l: (l["progresso_pct"], l["pontos"], l["moedas"]), reverse=True)
+    for posicao, linha in enumerate(linhas, start=1):
+        linha["posicao_na_turma"] = posicao
 
     return {
         "turma": turma.name,
@@ -99,11 +105,14 @@ def get_relatorio_turma_pdf(nome: str, db: Session = Depends(get_db)):
         Spacer(1, 14),
     ]
 
-    linhas_tabela = [["Aluno", "Login", "Progresso", "Status", "Concluído em"]]
+    linhas_tabela = [["#", "Aluno", "Login", "Progresso", "Pontos", "Moedas", "Status", "Concluído em"]]
     for a in dados["alunos"]:
-        linhas_tabela.append([a["nome"], a["login"], f"{a['progresso_pct']:.1f}%", a["status"], a["concluido_em"]])
+        linhas_tabela.append([
+            str(a["posicao_na_turma"]), a["nome"], a["login"], f"{a['progresso_pct']:.1f}%",
+            f"{a['pontos']:.0f}", f"{a['moedas']:.0f}", a["status"], a["concluido_em"],
+        ])
 
-    tabela = Table(linhas_tabela, colWidths=[5.5 * cm, 4 * cm, 2.5 * cm, 2.8 * cm, 3 * cm], repeatRows=1)
+    tabela = Table(linhas_tabela, colWidths=[1 * cm, 4.3 * cm, 3.3 * cm, 2.2 * cm, 2 * cm, 2 * cm, 2.4 * cm, 2.5 * cm], repeatRows=1)
     tabela.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(NAVY)),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
@@ -152,22 +161,25 @@ def get_relatorio_turma_excel(nome: str, db: Session = Depends(get_db)):
     ws["A2"].font = Font(name="Arial", size=9, italic=True, color="666666")
 
     header_row = 4
-    for col, texto in enumerate(["Aluno", "Login", "Progresso", "Status", "Concluído em"], start=1):
+    for col, texto in enumerate(["#", "Aluno", "Login", "Progresso", "Pontos", "Moedas", "Status", "Concluído em"], start=1):
         celula = ws.cell(row=header_row, column=col, value=texto)
         celula.font = Font(name="Arial", bold=True, color="FFFFFF")
         celula.fill = PatternFill("solid", fgColor=NAVY.lstrip("#"))
         celula.alignment = Alignment(horizontal="center")
 
     for i, aluno in enumerate(dados["alunos"], start=header_row + 1):
-        ws.cell(row=i, column=1, value=aluno["nome"]).font = Font(name="Arial")
-        ws.cell(row=i, column=2, value=aluno["login"]).font = Font(name="Arial")
-        celula_pct = ws.cell(row=i, column=3, value=aluno["progresso_pct"] / 100)
+        ws.cell(row=i, column=1, value=aluno["posicao_na_turma"]).font = Font(name="Arial")
+        ws.cell(row=i, column=2, value=aluno["nome"]).font = Font(name="Arial")
+        ws.cell(row=i, column=3, value=aluno["login"]).font = Font(name="Arial")
+        celula_pct = ws.cell(row=i, column=4, value=aluno["progresso_pct"] / 100)
         celula_pct.number_format = "0.0%"
         celula_pct.font = Font(name="Arial")
-        ws.cell(row=i, column=4, value=aluno["status"]).font = Font(name="Arial")
-        ws.cell(row=i, column=5, value=aluno["concluido_em"]).font = Font(name="Arial")
+        ws.cell(row=i, column=5, value=aluno["pontos"]).font = Font(name="Arial")
+        ws.cell(row=i, column=6, value=aluno["moedas"]).font = Font(name="Arial")
+        ws.cell(row=i, column=7, value=aluno["status"]).font = Font(name="Arial")
+        ws.cell(row=i, column=8, value=aluno["concluido_em"]).font = Font(name="Arial")
 
-    for col, largura in zip("ABCDE", [30, 22, 14, 14, 16]):
+    for col, largura in zip("ABCDEFGH", [5, 28, 20, 12, 10, 10, 14, 16]):
         ws.column_dimensions[col].width = largura
 
     buffer = io.BytesIO()

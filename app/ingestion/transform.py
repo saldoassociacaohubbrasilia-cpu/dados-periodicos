@@ -70,6 +70,8 @@ def _upsert_students(db: Session, players: list) -> tuple[dict[str, Student], di
         student.login = login
         student.name = _field(p, "playerName", "name", "nome")
         student.account_status = _field(p, "status", default=None)
+        student.pontos = _field(p, "score", default=None)
+        student.moedas = _field(p, "coins", default=None)
         external_ids.append(external_id)
 
         grupos = _field(p, "groups", default=[]) or []
@@ -185,11 +187,11 @@ def _process_trilha(
         if not external_id:
             continue
 
-        # Só conta aluno com conta ATIVA na Ludos — quando o semestre
-        # vira e a Ludos marca o aluno antigo como BLOCKED/INACTIVE, ele
-        # some dos KPIs sozinho, sem precisar apagar nada do banco.
+        # Só exclui aluno BLOQUEADO na Ludos. INACTIVE (nunca logou, mas
+        # ainda não foi bloqueado) continua contando — ele é "cadastrado
+        # mas sem primeiro acesso", não um aluno de semestre encerrado.
         student_account = students_by_id.get(external_id)
-        if student_account is not None and student_account.account_status in ("BLOCKED", "INACTIVE"):
+        if student_account is not None and student_account.account_status == "BLOCKED":
             continue
 
         # Turma (GroupName) e pontuação não vêm no /report/performance — a

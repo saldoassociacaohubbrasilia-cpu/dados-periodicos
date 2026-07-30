@@ -84,6 +84,10 @@ class Student(Base):
     # os alunos antigos como BLOCKED — é esse campo que o dashboard usa
     # pra mostrar só quem está ativo no período corrente.
     account_status: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    # Pontuação e moedas individuais (campos "score"/"coins" da Ludos,
+    # em /report/players) — usados pro ranking de alunos por turma.
+    pontos: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    moedas: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 
     progress_records: Mapped[list["StudentProgress"]] = relationship(back_populates="student")
 
