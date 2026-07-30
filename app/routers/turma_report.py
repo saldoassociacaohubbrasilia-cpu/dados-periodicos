@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import Turma, Student, StudentProgress
+from app.ingestion.transform import calcular_alerta_aluno
 
 router = APIRouter(prefix="/api/v1/turma", tags=["relatorio-turma"])
 
@@ -17,11 +18,34 @@ GREEN = "#10B981"
 
 STATUS_LABEL = {"concluido": "Concluído", "engajado": "Engajado", "inscrito": "Inscrito"}
 
+# --- Ranking de Estudantes por performance ---
+# Mesma fórmula do script de diagnóstico pré-semestre:
+#   score = PESO_PROGRESSAO * progresso_pct
+#         + PESO_PONTOS     * pontos_normalizados
+#         + PESO_MOEDAS     * moedas_normalizados
+# pontos/moedas são normalizados min-max pra escala 0-100 DENTRO DA
+# TURMA antes de entrar na conta — sem isso, comparar pontos (que pode
+# ir a milhares) direto com progresso (0-100%) não faz sentido.
+PESO_PROGRESSAO = 0.60
+PESO_PONTOS = 0.25
+PESO_MOEDAS = 0.15
+
 
 def _slug(texto: str) -> str:
     """Vira um nome de arquivo seguro (sem espaço/acento/caractere especial)."""
     limpo = re.sub(r"[^A-Za-z0-9]+", "_", texto).strip("_")
     return limpo or "turma"
+
+
+def _normalizar_0_100(valores: list[float]) -> list[float]:
+    """Normalização min-max pra escala 0-100. Turma inteira com o mesmo
+    valor (ou lista vazia) -> todo mundo fica em 0 (sem variação pra medir)."""
+    if not valores:
+        return []
+    minimo, maximo = min(valores), max(valores)
+    if maximo == minimo:
+        return [0.0] * len(valores)
+    return [(v - minimo) / (maximo - minimo) * 100 for v in valores]
 
 
 def _buscar_relatorio_turma(db: Session, nome: str) -> dict:
@@ -40,6 +64,7 @@ def _buscar_relatorio_turma(db: Session, nome: str) -> dict:
             )
         ).scalar_one_or_none()
         status = progresso.status if progresso else "inscrito"
+        dias_sem_acesso, alerta, motivo_alerta = calcular_alerta_aluno(aluno.last_access)
         linhas.append({
             "nome": aluno.name or aluno.login,
             "login": aluno.login,
@@ -47,15 +72,23 @@ def _buscar_relatorio_turma(db: Session, nome: str) -> dict:
             "pontos": aluno.pontos if aluno.pontos is not None else 0,
             "moedas": aluno.moedas if aluno.moedas is not None else 0,
             "status": STATUS_LABEL.get(status, status),
+            "dias_sem_acesso": dias_sem_acesso,
+            "alerta_inatividade": alerta,
+            "motivo_alerta": motivo_alerta,
             "concluido_em": (
                 progresso.completed_at.strftime("%d/%m/%Y")
                 if progresso and progresso.completed_at else "—"
             ),
         })
 
-    # Ranking dos mais engajados da turma: progresso na trilha primeiro,
-    # pontos e moedas como desempate — não mais ordem alfabética.
-    linhas.sort(key=lambda l: (l["progresso_pct"], l["pontos"], l["moedas"]), reverse=True)
+    pontos_norm = _normalizar_0_100([l["pontos"] for l in linhas])
+    moedas_norm = _normalizar_0_100([l["moedas"] for l in linhas])
+    for linha, p_norm, m_norm in zip(linhas, pontos_norm, moedas_norm):
+        linha["score_engajamento"] = round(
+            PESO_PROGRESSAO * linha["progresso_pct"] + PESO_PONTOS * p_norm + PESO_MOEDAS * m_norm, 2
+        )
+
+    linhas.sort(key=lambda l: l["score_engajamento"], reverse=True)
     for posicao, linha in enumerate(linhas, start=1):
         linha["posicao_na_turma"] = posicao
 
@@ -65,6 +98,7 @@ def _buscar_relatorio_turma(db: Session, nome: str) -> dict:
         "total_alunos": len(linhas),
         "engajados": sum(1 for l in linhas if l["progresso_pct"] > 0),
         "concluintes": sum(1 for l in linhas if l["progresso_pct"] >= 100),
+        "em_alerta": sum(1 for l in linhas if l["alerta_inatividade"]),
         "alunos": linhas,
     }
 
@@ -105,14 +139,15 @@ def get_relatorio_turma_pdf(nome: str, db: Session = Depends(get_db)):
         Spacer(1, 14),
     ]
 
-    linhas_tabela = [["#", "Aluno", "Login", "Progresso", "Pontos", "Moedas", "Status", "Concluído em"]]
+    linhas_tabela = [["#", "Aluno", "Login", "Progresso", "Pontos", "Moedas", "Status", "Alerta", "Concluído em"]]
     for a in dados["alunos"]:
         linhas_tabela.append([
             str(a["posicao_na_turma"]), a["nome"], a["login"], f"{a['progresso_pct']:.1f}%",
-            f"{a['pontos']:.0f}", f"{a['moedas']:.0f}", a["status"], a["concluido_em"],
+            f"{a['pontos']:.0f}", f"{a['moedas']:.0f}", a["status"],
+            a["motivo_alerta"] or "—", a["concluido_em"],
         ])
 
-    tabela = Table(linhas_tabela, colWidths=[1 * cm, 4.3 * cm, 3.3 * cm, 2.2 * cm, 2 * cm, 2 * cm, 2.4 * cm, 2.5 * cm], repeatRows=1)
+    tabela = Table(linhas_tabela, colWidths=[0.8 * cm, 3.6 * cm, 2.8 * cm, 1.9 * cm, 1.6 * cm, 1.6 * cm, 2 * cm, 3 * cm, 2.1 * cm], repeatRows=1)
     tabela.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(NAVY)),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
@@ -161,7 +196,7 @@ def get_relatorio_turma_excel(nome: str, db: Session = Depends(get_db)):
     ws["A2"].font = Font(name="Arial", size=9, italic=True, color="666666")
 
     header_row = 4
-    for col, texto in enumerate(["#", "Aluno", "Login", "Progresso", "Pontos", "Moedas", "Status", "Concluído em"], start=1):
+    for col, texto in enumerate(["#", "Aluno", "Login", "Progresso", "Pontos", "Moedas", "Status", "Alerta", "Concluído em"], start=1):
         celula = ws.cell(row=header_row, column=col, value=texto)
         celula.font = Font(name="Arial", bold=True, color="FFFFFF")
         celula.fill = PatternFill("solid", fgColor=NAVY.lstrip("#"))
@@ -177,9 +212,11 @@ def get_relatorio_turma_excel(nome: str, db: Session = Depends(get_db)):
         ws.cell(row=i, column=5, value=aluno["pontos"]).font = Font(name="Arial")
         ws.cell(row=i, column=6, value=aluno["moedas"]).font = Font(name="Arial")
         ws.cell(row=i, column=7, value=aluno["status"]).font = Font(name="Arial")
-        ws.cell(row=i, column=8, value=aluno["concluido_em"]).font = Font(name="Arial")
+        celula_alerta = ws.cell(row=i, column=8, value=aluno["motivo_alerta"] or "—")
+        celula_alerta.font = Font(name="Arial", color="DC2626" if aluno["alerta_inatividade"] else "000000")
+        ws.cell(row=i, column=9, value=aluno["concluido_em"]).font = Font(name="Arial")
 
-    for col, largura in zip("ABCDEFGH", [5, 28, 20, 12, 10, 10, 14, 16]):
+    for col, largura in zip("ABCDEFGHI", [5, 28, 20, 12, 10, 10, 14, 20, 16]):
         ws.column_dimensions[col].width = largura
 
     buffer = io.BytesIO()

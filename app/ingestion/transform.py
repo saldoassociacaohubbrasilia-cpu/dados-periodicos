@@ -18,6 +18,11 @@ TRILHAS: dict[str, str] = {
     "43": "Trilha Pocket",
 }
 
+# Sistema de Alertas: aluno entra em alerta se nunca fez login
+# (last_access nulo) OU se já passaram mais de DIAS_LIMITE_INATIVIDADE
+# dias desde o último acesso (Student.last_access, vindo do log de login).
+DIAS_LIMITE_INATIVIDADE = 10
+
 
 def _latest_payload(db: Session, endpoint: str):
     row = db.execute(
@@ -112,13 +117,19 @@ def _get_or_create_school_turma(db: Session, cache: dict, group_name: str) -> tu
 
 
 def _parse_iso(valor) -> "dt.datetime | None":
-    """Converte a data ISO da Ludos (ex: '2026-05-07T17:24:01.61+00:00') em
-    datetime. Devolve None se vier vazio ou em formato inesperado — nesse
-    caso quem chamou usa 'agora' como aproximação."""
+    """Converte a data ISO da Ludos em datetime. Aceita tanto o formato
+    com offset ('2026-05-07T17:24:01.61+00:00', usado em startDate/endDate)
+    quanto com sufixo 'Z' ('2026-09-15T10:30:00Z', usado no log de acesso)
+    — 'Z' vira '+00:00' antes de converter, pra funcionar em qualquer
+    versão do Python, não só 3.11+. Devolve None se vier vazio ou em
+    formato inesperado — nesse caso quem chamou usa 'agora' como aproximação."""
     if not valor:
         return None
+    texto = str(valor)
+    if texto.endswith("Z"):
+        texto = texto[:-1] + "+00:00"
     try:
-        return dt.datetime.fromisoformat(str(valor))
+        return dt.datetime.fromisoformat(texto)
     except ValueError:
         return None
 
@@ -315,6 +326,51 @@ def _process_trilha(
     )
 
 
+def calcular_alerta_aluno(last_access: "dt.datetime | None", agora: "dt.datetime | None" = None) -> tuple:
+    """
+    Calcula o alerta de inatividade de UM aluno a partir do último acesso.
+    Devolve (dias_sem_acesso, alerta: bool, motivo: str|None):
+      - last_access nulo -> aluno nunca logou -> sempre em alerta
+      - dias_sem_acesso > DIAS_LIMITE_INATIVIDADE -> em alerta
+      - caso contrário -> sem alerta (motivo None)
+    """
+    agora = agora or dt.datetime.now(dt.timezone.utc)
+    if last_access is None:
+        return None, True, "Nunca acessou"
+    dias = (agora - last_access).days
+    if dias > DIAS_LIMITE_INATIVIDADE:
+        return dias, True, f"Sem acesso há {dias} dias"
+    return dias, False, None
+
+
+def _aplicar_ultimo_acesso(db: Session, students_by_id: dict[str, Student], login_log: list) -> None:
+    """
+    Recebe o log de acesso cru ([{idPlayer, dtLog, txData}, ...]) e grava
+    em cada Student o dtLog MAIS RECENTE (um mesmo aluno aparece uma vez
+    por login que já fez, então precisa pegar o máximo por idPlayer).
+    Assume que o endpoint devolve o histórico completo a cada chamada —
+    se um dia a Ludos passar a mandar só os logins novos, essa lógica
+    de "pega o maior" deixa de ser suficiente e precisaria acumular
+    entre sincronizações em vez de substituir.
+    """
+    ultimo_por_aluno: dict[str, "dt.datetime"] = {}
+    for registro in login_log:
+        external_id = str(_field(registro, "idPlayer", "playerId", "player_id", default=""))
+        if not external_id:
+            continue
+        dt_log = _parse_iso(_field(registro, "dtLog", "dt_log", "logDate"))
+        if dt_log is None:
+            continue
+        atual = ultimo_por_aluno.get(external_id)
+        if atual is None or dt_log > atual:
+            ultimo_por_aluno[external_id] = dt_log
+
+    for external_id, ultimo_acesso in ultimo_por_aluno.items():
+        student = students_by_id.get(external_id)
+        if student is not None:
+            student.last_access = ultimo_acesso
+
+
 def rebuild_metrics(db: Session) -> None:
     """
     Recalcula os agregados de TODAS as trilhas em TRILHAS (hoje: Saldo+ e
@@ -326,8 +382,10 @@ def rebuild_metrics(db: Session) -> None:
     """
     players = _latest_payload(db, "/report/players") or []
     performance = _latest_payload(db, "/report/performance") or []
+    login_log = _latest_payload(db, "/report/access-log") or []
 
     students_by_id, player_extra = _upsert_students(db, players)
+    _aplicar_ultimo_acesso(db, students_by_id, login_log)
     school_turma_cache: dict = {}
 
     for trilha_id, trilha_nome in TRILHAS.items():

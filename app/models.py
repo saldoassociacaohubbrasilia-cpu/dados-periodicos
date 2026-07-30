@@ -88,6 +88,10 @@ class Student(Base):
     # em /report/players) — usados pro ranking de alunos por turma.
     pontos: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     moedas: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    # Último login (campo "dtLog" do log de acesso da Ludos — ver
+    # app/ludos_client.py:LOGIN_LOG_PATH). Usado pelo Sistema de Alertas
+    # pra calcular dias sem acessar. None = nunca fez login.
+    last_access: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     progress_records: Mapped[list["StudentProgress"]] = relationship(back_populates="student")
 

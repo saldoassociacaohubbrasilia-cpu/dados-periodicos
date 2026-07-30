@@ -23,6 +23,7 @@ ENDPOINTS = {
     "/report/performance": lambda c: c.get_performance(),
     "/report/trails": lambda c: c.get_trails(),
     "/report/trails-performance": lambda c: c.get_trails_performance(),
+    "/report/access-log": lambda c: c.get_login_log(),
     "/report/players": lambda c: c.get_players(),
 }
 

@@ -8,6 +8,13 @@ from app.config import settings
 
 logger = logging.getLogger("ludos_client")
 
+# AJUSTE AQUI: caminho real do endpoint de log de acesso/login na Ludos.
+# Não foi possível confirmar o nome exato — "access-log" é um palpite
+# baseado no padrão dos outros endpoints (/report/players, /report/trails
+# etc). Confira o nome certo em {LUDOS_API_BASE_URL}/doc/index.html#servers
+# (mesma documentação usada pros outros endpoints) e troca a linha abaixo.
+LOGIN_LOG_PATH = "/report/access-log"
+
 
 class LudosAPIError(Exception):
     pass
@@ -134,6 +141,12 @@ class LudosClient:
 
     def get_certificates(self) -> list:
         return self._get_paginated("/report/certificates")
+
+    def get_login_log(self) -> list:
+        """Log de acessos: [{idPlayer, dtLog, txData}, ...]. Usado pelo
+        Sistema de Alertas (dias sem acessar). Ver LOGIN_LOG_PATH acima
+        se precisar corrigir o caminho."""
+        return self._get_paginated(LOGIN_LOG_PATH)
 
     def close(self):
         self._client.close()

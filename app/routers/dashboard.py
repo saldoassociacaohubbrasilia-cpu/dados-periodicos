@@ -4,9 +4,10 @@ from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import MetricSnapshot
+from app.models import MetricSnapshot, Student, School, Turma, StudentProgress
 from app.schemas import OverviewOut, TrailShareOut
-from app.institutions import normalize_institution, SCHOOL_COORDINATES
+from app.institutions import normalize_institution, get_institution, SCHOOL_COORDINATES
+from app.ingestion.transform import calcular_alerta_aluno
 
 router = APIRouter(prefix="/api/v1", tags=["dashboard"])
 
@@ -226,6 +227,45 @@ def get_ranking(instituicao: str = "todas", trilha: str = TRILHA_PADRAO, db: Ses
             for i, r in enumerate(rows)
         ]
     }
+
+
+@router.get("/alertas")
+def get_alertas(instituicao: str = "todas", db: Session = Depends(get_db)):
+    """
+    Sistema de Alertas: lista todos os alunos sem acesso há mais de
+    DIAS_LIMITE_INATIVIDADE dias (ou que nunca acessaram), de todas as
+    turmas, filtrável por instituição. Depende de Student.last_access,
+    preenchido pelo log de login sincronizado em /report/access-log
+    (ver app/ludos_client.py:LOGIN_LOG_PATH).
+    """
+    inst_filtro = normalize_institution(instituicao)
+
+    alunos = db.execute(select(Student)).scalars().all()
+
+    alertas = []
+    for aluno in alunos:
+        dias_sem_acesso, alerta, motivo = calcular_alerta_aluno(aluno.last_access)
+        if not alerta:
+            continue
+
+        turma = db.get(Turma, aluno.turma_id) if aluno.turma_id else None
+        nome_turma = turma.name if turma else "Sem Turma"
+        inst_aluno = get_institution(nome_turma)
+
+        if inst_filtro != "todas" and inst_aluno != inst_filtro:
+            continue
+
+        alertas.append({
+            "nome": aluno.name or aluno.login,
+            "login": aluno.login,
+            "turma": nome_turma,
+            "instituicao": inst_aluno,
+            "dias_sem_acesso": dias_sem_acesso,
+            "motivo_alerta": motivo,
+        })
+
+    alertas.sort(key=lambda a: (a["dias_sem_acesso"] is None, a["dias_sem_acesso"] or 0), reverse=True)
+    return {"total_em_alerta": len(alertas), "alertas": alertas}
 
 
 @router.post("/sync/run")
