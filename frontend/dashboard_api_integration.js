@@ -22,11 +22,9 @@ const fmtPct = (num) => (num || 0).toFixed(1) + '%';
 function setKpi(id, text) { const el = document.getElementById(id); if (el) el.textContent = text; }
 
 // --- Inicialização do Mapa (Leaflet.js) ---
-// Centro inicial é o Brasil inteiro (visão de país). Assim que os
-// marcadores chegarem, atualizarMapa() ajusta o zoom automaticamente
-// pra enquadrar todas as escolas, seja só DF, DF + São Paulo, ou
-// qualquer outro estado que entrar no futuro — sem precisar mexer
-// nesse arquivo de novo a cada nova cidade.
+// Visão inicial é o Brasil inteiro; assim que os dados chegam,
+// atualizarMapa() troca pra região fixa da instituição selecionada
+// (ver REGIOES_MAPA logo abaixo).
 function inicializarMapa() {
     if (!mapaGeografico) {
         mapaGeografico = L.map('mapa-escolas').setView([-14.235, -51.9253], 4);
@@ -37,7 +35,16 @@ function inicializarMapa() {
     }
 }
 
-function atualizarMapa(dadosEscolas) {
+// Regiões fixas por instituição — em vez de deixar o mapa se ajustar
+// sozinho conforme os pontos que vierem, cada filtro sempre mostra a
+// mesma área: Brasil inteiro em "todas", DF na Secretaria, São Paulo na CVP.
+const REGIOES_MAPA = {
+    todas: { center: [-14.235, -51.9253], zoom: 4 },
+    secretaria: { center: [-15.7939, -47.8828], zoom: 10 },
+    cvp: { center: [-23.5505, -46.6333], zoom: 10 },
+};
+
+function atualizarMapa(dadosEscolas, instituicaoId) {
     // Remove marcadores antigos
     marcadoresMapa.forEach(m => mapaGeografico.removeLayer(m));
     marcadoresMapa = [];
@@ -61,13 +68,12 @@ function atualizarMapa(dadosEscolas) {
         }
     });
 
-    // Ajusta o zoom/enquadramento automaticamente pra caber todos os
-    // pontos na tela — funciona igual com escolas só no DF ou
-    // espalhadas entre DF e São Paulo, sem precisar de zoom fixo.
-    if (marcadoresMapa.length > 0) {
-        const grupo = L.featureGroup(marcadoresMapa);
-        mapaGeografico.fitBounds(grupo.getBounds().pad(0.2));
-    }
+    // Região fixa por instituição — Brasil inteiro em "todas", DF na
+    // Secretaria, São Paulo na CVP. Não depende de quantos marcadores
+    // vieram: mesmo com só 1 escola (ou nenhuma ainda cadastrada com
+    // coordenada), o mapa continua mostrando a área certa.
+    const regiao = REGIOES_MAPA[instituicaoId] || REGIOES_MAPA.todas;
+    mapaGeografico.setView(regiao.center, regiao.zoom);
 }
 
 // --- Renderização de Gráficos (Chart.js) ---
@@ -181,7 +187,7 @@ async function carregarDashboard(instituicaoId, trilhaId) {
         setKpi('destaque-modulo', destaque.modulo_destaque || '—');
 
         // Atualiza Mapa, Gráficos e Tabelas
-        atualizarMapa(dados.escolas);
+        atualizarMapa(dados.escolas, instituicaoId);
         renderizarGraficos(dados.escolas, dados.modulos);
         renderizarTabelaTurmas(dados.turmas);
 
