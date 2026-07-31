@@ -85,17 +85,18 @@ class LudosClient:
 
     def _get_paginated(self, path: str, params: Optional[dict] = None, page_size: int = 100) -> list:
         """
-        Paginação genérica (page/per_page). IMPORTANTE: os nomes dos
-        parâmetros e o formato da resposta ("data" vs lista direta) são
-        um ponto de partida — confirme com scripts/inspect_endpoint.py
-        antes de confiar cegamente nisso em produção.
+        Paginação genérica (page/per_page) — SÓ use isso se a documentação
+        de um endpoint confirmar que ele realmente pagina. Nenhum dos
+        endpoints "bulk" atuais (players/trails/performance/trails-
+        performance/logs/certificates/courses) documenta page/per_page;
+        use _get_single() para esses.
         """
         params = dict(params or {})
         page = 1
         results: list = []
         while True:
             params.update({"page": page, "per_page": page_size})
-            
+
             try:
                 data = self._get(path, params=params)
             except httpx.HTTPStatusError as exc:
@@ -109,7 +110,7 @@ class LudosClient:
                     break
                 # Se for outro erro HTTP, continua a lançar a exceção
                 raise
-            
+
             items = data.get("data", data) if isinstance(data, dict) else data
             if not items:
                 break
@@ -119,31 +120,55 @@ class LudosClient:
             page += 1
         return results
 
+    def _get_single(self, path: str) -> list:
+        """
+        Busca um endpoint que devolve a lista INTEIRA numa chamada só —
+        a documentação oficial da Ludos (/doc) não lista parâmetro de
+        página pra nenhum dos endpoints "bulk" de relatório. Só os
+        endpoints por curso (/report/*/course) aceitam parâmetro, e é
+        filtro (code), não paginação.
+
+        Antes, esses endpoints eram chamados com _get_paginated() — como
+        a API ignora page/per_page (não documentados), ela devolvia a
+        lista inteira de novo a cada "página", e o código achava que
+        ainda faltava mais e pedia de novo. Resultado: a mesma resposta
+        sendo buscada dezenas de vezes por sync, estourando a cota em
+        repetição, não em dado novo de verdade.
+        """
+        try:
+            data = self._get(path)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 403:
+                logger.warning("Cota excedida na API (403) em %s. Retornando lista vazia.", path)
+                return []
+            raise
+        items = data.get("data", data) if isinstance(data, dict) else data
+        return items or []
+
     # --- endpoints usados pelo dashboard (conferidos na doc /doc/index.html#servers) ---
 
     def get_players(self) -> list:
-        return self._get_paginated("/report/players")
+        return self._get_single("/report/players")
 
     def get_trails(self) -> list:
-        return self._get_paginated("/report/trails")
+        return self._get_single("/report/trails")
 
     def get_courses(self) -> list:
-        return self._get_paginated("/report/courses")
+        return self._get_single("/report/courses")
 
     def get_performance(self) -> list:
-        return self._get_paginated("/report/performance")
+        return self._get_single("/report/performance")
 
     def get_trails_performance(self) -> list:
-        return self._get_paginated("/report/trails-performance")
+        return self._get_single("/report/trails-performance")
 
     def get_certificates(self) -> list:
-        return self._get_paginated("/report/certificates")
+        return self._get_single("/report/certificates")
 
     def get_login_log(self) -> list:
         """Log de acessos: [{idPlayer, dtLog, txData}, ...]. Usado pelo
-        Sistema de Alertas (dias sem acessar). Ver LOGIN_LOG_PATH acima
-        se precisar corrigir o caminho."""
-        return self._get_paginated(LOGIN_LOG_PATH)
+        Sistema de Alertas (dias sem acessar)."""
+        return self._get_single(LOGIN_LOG_PATH)
 
     def close(self):
         self._client.close()

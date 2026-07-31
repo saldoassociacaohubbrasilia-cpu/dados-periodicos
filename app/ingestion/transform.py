@@ -212,7 +212,13 @@ def _process_trilha(
         inst = get_institution(group_name)
 
         progress = float(_field(perf, "progression", "progress", "progress_pct", "Complete", default=0) or 0)
-        module_name = str(_field(perf, "ModuleId", "module_name", "modulo", default="Módulo Geral"))
+        # /report/performance NÃO manda módulo (confirmado nos campos reais:
+        # courseId, playerId, progression, activitiesPlayed... sem moduleId).
+        # Então isso aqui SEMPRE cai no default — o rollup "por módulo" é
+        # hoje um placeholder de 1 balde só, não um detalhamento de verdade.
+        # Pra ter módulo real, precisaria de /report/performance/course
+        # (usa "code" do curso) ou /report/play/course, chamado por curso.
+        module_name = str(_field(perf, "ModuleId", "module_name", "modulo", default="Geral"))
         pontuacao = extra.get("pontuacao")
         status = "concluido" if progress >= 100 else ("engajado" if progress > 0 else "inscrito")
 
