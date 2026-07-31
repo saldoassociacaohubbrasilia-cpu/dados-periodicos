@@ -382,7 +382,7 @@ def rebuild_metrics(db: Session) -> None:
     """
     players = _latest_payload(db, "/report/players") or []
     performance = _latest_payload(db, "/report/performance") or []
-    login_log = _latest_payload(db, "/report/access-log") or []
+    login_log = _latest_payload(db, "/report/logs") or []
 
     students_by_id, player_extra = _upsert_students(db, players)
     _aplicar_ultimo_acesso(db, students_by_id, login_log)
