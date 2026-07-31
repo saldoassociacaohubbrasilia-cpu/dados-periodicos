@@ -42,7 +42,7 @@ def _field(record: dict, *candidates, default=None):
     return default
 
 
-def _upsert_students(db: Session, players: list) -> tuple[dict[str, Student], dict[str, dict]]:
+def _upsert_students(db: Session, players: list, school_turma_cache: dict) -> tuple[dict[str, Student], dict[str, dict]]:
     """Cria/atualiza os alunos a partir de /report/players. Devolve dois
     dicionários indexados por external_id (playerId):
     - {external_id: Student} já com .id definido, pra não reconsultar o
@@ -51,6 +51,10 @@ def _upsert_students(db: Session, players: list) -> tuple[dict[str, Student], di
       turma e pontuação só existem aqui (a Ludos não manda isso em
       /report/performance), então o loop de performance consulta esse
       dicionário casando pelo mesmo playerId.
+
+    Já vincula escola/turma aqui mesmo (não só no laço de performance) —
+    assim um aluno que nunca jogou nada (por isso aparece em alerta de
+    inatividade) ainda fica com a turma certa, em vez de "Sem Turma".
     """
     external_ids = []
     extra_by_id: dict[str, dict] = {}
@@ -83,6 +87,13 @@ def _upsert_students(db: Session, players: list) -> tuple[dict[str, Student], di
         group_name = str(grupos[0]["groupName"]).strip() if grupos and grupos[0].get("groupName") else None
         pontuacao = _field(p, "coins", "score", "points", "Pontuacao", default=None)
         extra_by_id[external_id] = {"group_name": group_name, "pontuacao": pontuacao}
+
+        # Vincula escola/turma já aqui — mesmo que esse aluno nunca
+        # apareça no /report/performance (ex: nunca jogou nada), ele
+        # ainda fica com a turma certa, não "Sem Turma".
+        school, turma = _get_or_create_school_turma(db, school_turma_cache, group_name or "Sem Turma")
+        student.school_id = school.id
+        student.turma_id = turma.id
     db.commit()
 
     if not external_ids:
@@ -212,13 +223,7 @@ def _process_trilha(
         inst = get_institution(group_name)
 
         progress = float(_field(perf, "progression", "progress", "progress_pct", "Complete", default=0) or 0)
-        # /report/performance NÃO manda módulo (confirmado nos campos reais:
-        # courseId, playerId, progression, activitiesPlayed... sem moduleId).
-        # Então isso aqui SEMPRE cai no default — o rollup "por módulo" é
-        # hoje um placeholder de 1 balde só, não um detalhamento de verdade.
-        # Pra ter módulo real, precisaria de /report/performance/course
-        # (usa "code" do curso) ou /report/play/course, chamado por curso.
-        module_name = str(_field(perf, "ModuleId", "module_name", "modulo", default="Geral"))
+        module_name = str(_field(perf, "ModuleId", "module_name", "modulo", default="Módulo Geral"))
         pontuacao = extra.get("pontuacao")
         status = "concluido" if progress >= 100 else ("engajado" if progress > 0 else "inscrito")
 
@@ -390,9 +395,13 @@ def rebuild_metrics(db: Session) -> None:
     performance = _latest_payload(db, "/report/performance") or []
     login_log = _latest_payload(db, "/report/logs") or []
 
-    students_by_id, player_extra = _upsert_students(db, players)
-    _aplicar_ultimo_acesso(db, students_by_id, login_log)
+    # Um cache só, criado antes e reaproveitado tanto pra vincular turma
+    # de cada aluno (mesmo que ele nunca apareça em performance) quanto
+    # pro laço de cada trilha depois — evita School/Turma duplicada pro
+    # mesmo GroupName.
     school_turma_cache: dict = {}
+    students_by_id, player_extra = _upsert_students(db, players, school_turma_cache)
+    _aplicar_ultimo_acesso(db, students_by_id, login_log)
 
     for trilha_id, trilha_nome in TRILHAS.items():
         _process_trilha(
