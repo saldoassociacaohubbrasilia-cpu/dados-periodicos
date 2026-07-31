@@ -190,6 +190,12 @@
             display: flex; align-items: center; justify-content: center;
             color: var(--accent, var(--navy));
             background: color-mix(in srgb, var(--accent, var(--navy)) 18%, white);
+            box-shadow: 0 3px 8px color-mix(in srgb, var(--accent, var(--navy)) 30%, transparent);
+        }
+
+        @media (prefers-reduced-motion: no-preference) {
+            .kpi-icon { transition: transform .25s ease; }
+            .card:hover .kpi-icon { transform: scale(1.08) rotate(-4deg); }
         }
 
         .kpi-label {
@@ -220,7 +226,13 @@
             display: flex; align-items: center; justify-content: center;
             color: var(--accent, var(--orange));
             background: color-mix(in srgb, var(--accent, var(--orange)) 16%, white);
+            box-shadow: 0 3px 8px color-mix(in srgb, var(--accent, var(--orange)) 28%, transparent);
             flex-shrink: 0;
+        }
+
+        @media (prefers-reduced-motion: no-preference) {
+            .destaque-icon { transition: transform .25s ease; }
+            .card:hover .destaque-icon { transform: scale(1.08) rotate(-4deg); }
         }
 
         .destaque-label {
@@ -320,8 +332,8 @@
         }
 
         .btn-ver-alunos {
-            padding: 6px 12px;
-            background: var(--navy);
+            padding: 7px 14px;
+            background: linear-gradient(135deg, var(--navy), color-mix(in srgb, var(--navy) 65%, var(--cyan)));
             color: white;
             border: none;
             border-radius: 999px;
@@ -329,6 +341,13 @@
             font-size: 12px;
             font-weight: 600;
             cursor: pointer;
+            box-shadow: 0 2px 6px color-mix(in srgb, var(--navy) 35%, transparent);
+        }
+
+        @media (prefers-reduced-motion: no-preference) {
+            .btn-ver-alunos { transition: transform .15s ease, box-shadow .15s ease; }
+            .btn-ver-alunos:hover { transform: translateY(-1px) scale(1.03); box-shadow: 0 5px 12px color-mix(in srgb, var(--navy) 45%, transparent); }
+            .btn-ver-alunos:active { transform: translateY(0) scale(0.98); }
         }
 
         .btn-ver-alunos:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
@@ -424,11 +443,18 @@
             text-decoration: none;
             cursor: pointer;
             border: none;
+            box-shadow: 0 2px 6px rgba(15,23,42,0.16);
         }
 
         .btn-download-pdf { background: var(--navy); color: white; }
         .btn-download-excel { background: var(--green); color: white; }
-        .btn-download:hover { opacity: 0.88; }
+
+        @media (prefers-reduced-motion: no-preference) {
+            .btn-download { transition: transform .15s ease, box-shadow .15s ease, filter .15s ease; }
+            .btn-download:hover { transform: translateY(-2px); box-shadow: 0 8px 16px rgba(15,23,42,0.22); filter: brightness(1.08); }
+            .btn-download:active { transform: translateY(0); filter: brightness(0.95); }
+        }
+
         .btn-download:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
     </style>
 </head>
