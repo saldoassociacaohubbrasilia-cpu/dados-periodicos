@@ -3,7 +3,7 @@
 // Cores da Paleta Saldo+: Navy, Cyan, Orange, Magenta
 // ============================================================
 
-const API_BASE = 'http://localhost:8000/api/v1';
+const API_BASE = 'https://dados-periodicos.onrender.com/api/v1';
 const NAVY = '#002364', CYAN = '#11B2A8', ORANGE = '#F98105', MAGENTA = '#E72485';
 
 Chart.defaults.font.family = "'Poppins', system-ui, sans-serif";
