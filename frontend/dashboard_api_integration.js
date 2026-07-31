@@ -21,28 +21,57 @@ const fmtInt = (num) => new Intl.NumberFormat('pt-BR').format(num || 0);
 const fmtPct = (num) => (num || 0).toFixed(1) + '%';
 function setKpi(id, text) { const el = document.getElementById(id); if (el) el.textContent = text; }
 
+// --- Regiões e limites geográficos do mapa ---
+// Coordenadas (lat/lng) e zoom recomendado pra cada recorte, mais os
+// limites que travam o mapa dentro do Brasil.
+const REGIOES_MAPA = {
+    brasil: { center: [-14.235, -51.9253], zoom: 4 },
+    df: { center: [-15.7939, -47.8828], zoom: 10 },
+    sp: { center: [-23.5505, -46.6333], zoom: 10 },
+};
+// Mapeia o valor do filtro de instituição do dashboard ("todas",
+// "secretaria", "cvp") pra região correspondente acima.
+const INSTITUICAO_PARA_REGIAO = { todas: 'brasil', secretaria: 'df', cvp: 'sp' };
+
+// Retângulo (SW, NE) que envolve o Brasil inteiro com uma folga — o
+// mapa "rebate" se o usuário tentar arrastar pra fora disso.
+const LIMITES_BRASIL = [
+    [-35.0, -75.0], // sudoeste
+    [6.0, -32.0],   // nordeste
+];
+
 // --- Inicialização do Mapa (Leaflet.js) ---
-// Visão inicial é o Brasil inteiro; assim que os dados chegam,
-// atualizarMapa() troca pra região fixa da instituição selecionada
-// (ver REGIOES_MAPA logo abaixo).
+// Base CartoDB Positron (minimalista, tons claros) + mapa travado no
+// território brasileiro (maxBounds) com zoom limitado (nem rua, nem globo).
 function inicializarMapa() {
     if (!mapaGeografico) {
-        mapaGeografico = L.map('mapa-escolas').setView([-14.235, -51.9253], 4);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '© OpenStreetMap contributors',
+        mapaGeografico = L.map('mapa-escolas', {
+            center: REGIOES_MAPA.brasil.center,
+            zoom: REGIOES_MAPA.brasil.zoom,
+            minZoom: 4,
+            maxZoom: 12,
+            maxBounds: LIMITES_BRASIL,
+            maxBoundsViscosity: 1.0, // 1.0 = rebate de vez, não deixa "escapar" arrastando
+        });
+
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+            attribution: '© OpenStreetMap contributors © CARTO',
+            subdomains: 'abcd',
             maxZoom: 19
         }).addTo(mapaGeografico);
     }
 }
 
-// Regiões fixas por instituição — em vez de deixar o mapa se ajustar
-// sozinho conforme os pontos que vierem, cada filtro sempre mostra a
-// mesma área: Brasil inteiro em "todas", DF na Secretaria, São Paulo na CVP.
-const REGIOES_MAPA = {
-    todas: { center: [-14.235, -51.9253], zoom: 4 },
-    secretaria: { center: [-15.7939, -47.8828], zoom: 10 },
-    cvp: { center: [-23.5505, -46.6333], zoom: 10 },
-};
+// Move o mapa suavemente até uma região (flyTo anima o pan+zoom juntos,
+// diferente de setView que troca a visão de uma vez, sem transição).
+function focarRegiao(chave) {
+    const regiao = REGIOES_MAPA[chave] || REGIOES_MAPA.brasil;
+    mapaGeografico.flyTo(regiao.center, regiao.zoom, { duration: 1.2 });
+}
+
+function focarBrasil() { focarRegiao('brasil'); }
+function focarDF() { focarRegiao('df'); }
+function focarSP() { focarRegiao('sp'); }
 
 function atualizarMapa(dadosEscolas, instituicaoId) {
     // Remove marcadores antigos
@@ -68,12 +97,9 @@ function atualizarMapa(dadosEscolas, instituicaoId) {
         }
     });
 
-    // Região fixa por instituição — Brasil inteiro em "todas", DF na
-    // Secretaria, São Paulo na CVP. Não depende de quantos marcadores
-    // vieram: mesmo com só 1 escola (ou nenhuma ainda cadastrada com
-    // coordenada), o mapa continua mostrando a área certa.
-    const regiao = REGIOES_MAPA[instituicaoId] || REGIOES_MAPA.todas;
-    mapaGeografico.setView(regiao.center, regiao.zoom);
+    // Foca a região certa pro filtro de instituição selecionado — com
+    // animação suave (focarBrasil/focarDF/focarSP), não um corte seco.
+    focarRegiao(INSTITUICAO_PARA_REGIAO[instituicaoId] || 'brasil');
 }
 
 // --- Renderização de Gráficos (Chart.js) ---
