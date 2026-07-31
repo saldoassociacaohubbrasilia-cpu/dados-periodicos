@@ -81,6 +81,11 @@ def _upsert_students(db: Session, players: list, school_turma_cache: dict) -> tu
         student.account_status = _field(p, "status", default=None)
         student.pontos = _field(p, "score", default=None)
         student.moedas = _field(p, "coins", default=None)
+        # Sem managerId nem managerLogin -> não tem professor responsável
+        # acima -> é conta de professor/gestor/staff, não aluno de verdade.
+        manager_id = _field(p, "managerId", default=None)
+        manager_login = _field(p, "managerLogin", default=None)
+        student.is_staff = not manager_id and not manager_login
         external_ids.append(external_id)
 
         grupos = _field(p, "groups", default=[]) or []
@@ -212,8 +217,12 @@ def _process_trilha(
         # Só exclui aluno BLOQUEADO na Ludos. INACTIVE (nunca logou, mas
         # ainda não foi bloqueado) continua contando — ele é "cadastrado
         # mas sem primeiro acesso", não um aluno de semestre encerrado.
+        # Conta de professor/gestor (is_staff) também nunca conta como
+        # aluno, mesmo tendo algum registro de "performance" na trilha.
         student_account = students_by_id.get(external_id)
-        if student_account is not None and student_account.account_status == "BLOCKED":
+        if student_account is not None and (
+            student_account.account_status == "BLOCKED" or student_account.is_staff
+        ):
             continue
 
         # Turma (GroupName) e pontuação não vêm no /report/performance — a

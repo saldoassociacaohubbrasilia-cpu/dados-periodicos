@@ -92,6 +92,12 @@ class Student(Base):
     # app/ludos_client.py:LOGIN_LOG_PATH). Usado pelo Sistema de Alertas
     # pra calcular dias sem acessar. None = nunca fez login.
     last_access: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    # True quando a conta não tem gestor acima dela na Ludos (managerId
+    # 0/ausente e managerLogin nulo em /report/players) — sinal de que é
+    # uma conta de professor/coordenador/staff, não de aluno de verdade
+    # (aluno real sempre tem o professor responsável como managerId).
+    # Usado pra excluir essas contas do Sistema de Alertas e dos KPIs.
+    is_staff: Mapped[bool] = mapped_column(default=False)
 
     progress_records: Mapped[list["StudentProgress"]] = relationship(back_populates="student")
 

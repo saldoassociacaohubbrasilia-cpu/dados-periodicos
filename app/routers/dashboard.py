@@ -232,11 +232,11 @@ def get_ranking(instituicao: str = "todas", trilha: str = TRILHA_PADRAO, db: Ses
 @router.get("/alertas")
 def get_alertas(instituicao: str = "todas", db: Session = Depends(get_db)):
     """
-    Sistema de Alertas: lista todos os alunos sem acesso há mais de
-    DIAS_LIMITE_INATIVIDADE dias (ou que nunca acessaram), de todas as
-    turmas, filtrável por instituição. Depende de Student.last_access,
-    preenchido pelo log de login sincronizado em /report/access-log
-    (ver app/ludos_client.py:LOGIN_LOG_PATH).
+    Sistema de Alertas: lista os alunos ATIVOS/INATIVOS (nunca Bloqueados)
+    sem acesso há mais de DIAS_LIMITE_INATIVIDADE dias (ou que nunca
+    acessaram), de todas as turmas, filtrável por instituição. Depende
+    de Student.last_access, preenchido pelo log de login sincronizado
+    em /report/logs (ver app/ludos_client.py:LOGIN_LOG_PATH).
     """
     inst_filtro = normalize_institution(instituicao)
 
@@ -244,6 +244,13 @@ def get_alertas(instituicao: str = "todas", db: Session = Depends(get_db)):
 
     alertas = []
     for aluno in alunos:
+        # Mesma regra do resto do dashboard: Bloqueado nunca entra,
+        # mesmo que ele também esteja sem acesso há muito tempo — ele
+        # já não conta como aluno ativo do programa. Conta de professor/
+        # gestor (is_staff) também não é aluno — nunca entra no alerta.
+        if aluno.account_status == "BLOCKED" or aluno.is_staff:
+            continue
+
         dias_sem_acesso, alerta, motivo = calcular_alerta_aluno(aluno.last_access)
         if not alerta:
             continue
