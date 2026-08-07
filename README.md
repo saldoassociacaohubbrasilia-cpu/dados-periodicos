@@ -1,4 +1,4 @@
-# 💰 Saldo+ · Backend de Indicadores
+#  Saldo+ · Backend de Indicadores
 
 <p>
   <img alt="Python" src="https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white">
