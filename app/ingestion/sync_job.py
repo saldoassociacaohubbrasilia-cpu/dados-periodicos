@@ -1,14 +1,26 @@
 import datetime as dt
 import logging
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.database import SessionLocal
+from app.database import SessionLocal, engine
 from app.models import RawLudosSnapshot, SyncLog
 from app.ludos_client import LudosClient, LudosAPIError
 from app.ingestion.transform import rebuild_metrics
 
 logger = logging.getLogger("sync_job")
+
+# Chave arbitrária (mas fixa) do advisory lock do Postgres usado para
+# garantir que só existe UMA rodada de sync em andamento por vez —
+# mesmo que o processo web seja escalado para múltiplas instâncias, já
+# que o lock vive no banco, não em memória de um processo só. Sem isso,
+# um "rodar agora" manual sobrepondo o job agendado (ou dois manuais em
+# paralelo) faz dois LudosClient concorrentes e duas sessões de banco
+# mexendo nas mesmas linhas ao mesmo tempo — risco de IntegrityError em
+# Student.external_id (unique) e de StudentProgress duplicado (não tem
+# unique constraint, só é checado via SELECT antes do INSERT).
+_SYNC_LOCK_KEY = 928374651
 
 # Endpoints buscados a cada rodada. Adicione novos aqui conforme o
 # dashboard precisar de mais dados (ex: /report/certificates).
@@ -28,13 +40,36 @@ ENDPOINTS = {
 }
 
 
-def run_sync():
+def run_sync() -> bool:
     """
     Executa uma rodada completa: busca cada endpoint (com throttling
     já embutido no LudosClient), grava o retorno cru em JSONB, loga o
     resultado e, ao final, recalcula as métricas agregadas.
     Uma falha em um endpoint não impede os demais de rodar.
+
+    Protegida por um advisory lock do Postgres: se já existe uma rodada
+    em andamento (agendada ou disparada manualmente, neste processo ou
+    em outro), essa chamada não faz nada e devolve False na hora — em
+    vez de rodar em paralelo e arriscar corromper dado.
     """
+    lock_conn = engine.connect()
+    got_lock = lock_conn.execute(
+        text("SELECT pg_try_advisory_lock(:key)"), {"key": _SYNC_LOCK_KEY}
+    ).scalar()
+    if not got_lock:
+        logger.info("Sincronização já em andamento (outro processo/thread) — pulando esta rodada.")
+        lock_conn.close()
+        return False
+
+    try:
+        _run_sync_locked()
+        return True
+    finally:
+        lock_conn.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": _SYNC_LOCK_KEY})
+        lock_conn.close()
+
+
+def _run_sync_locked() -> None:
     db: Session = SessionLocal()
     client = LudosClient()
     try:

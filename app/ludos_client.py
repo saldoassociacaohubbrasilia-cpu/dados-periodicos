@@ -108,8 +108,13 @@ class LudosClient:
                         page, path, len(results)
                     )
                     break
-                # Se for outro erro HTTP, continua a lançar a exceção
-                raise
+                # Qualquer outro erro HTTP (401, 404, 422...) vira LudosAPIError
+                # em vez de propagar cru — assim run_sync() consegue capturar,
+                # logar como "erro" só nesse endpoint e seguir pros demais,
+                # em vez de abortar a sincronização inteira sem aviso.
+                raise LudosAPIError(
+                    f"{exc.response.status_code} em {path}: {exc.response.text[:300]}"
+                ) from exc
 
             items = data.get("data", data) if isinstance(data, dict) else data
             if not items:
@@ -141,7 +146,11 @@ class LudosClient:
             if exc.response.status_code == 403:
                 logger.warning("Cota excedida na API (403) em %s. Retornando lista vazia.", path)
                 return []
-            raise
+            # Qualquer outro erro HTTP vira LudosAPIError (ver mesmo comentário
+            # em _get_paginated) para não abortar a sincronização inteira.
+            raise LudosAPIError(
+                f"{exc.response.status_code} em {path}: {exc.response.text[:300]}"
+            ) from exc
         items = data.get("data", data) if isinstance(data, dict) else data
         return items or []
 

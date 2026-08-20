@@ -28,7 +28,15 @@ origins = [
 app.add_middleware(
     CORSMiddleware,
     allow_origins=list(set(origins)), # Remove duplicadas caso settings.frontend_origin seja igual
-    allow_credentials=True,
+    # allow_credentials=False porque a API não usa cookie/sessão — o
+    # frontend não manda credenciais cross-origin. Combinar
+    # allow_credentials=True com uma origem coringa ("*", o default de
+    # FRONTEND_ORIGIN quando a env var não é setada) é inválido pela
+    # spec de CORS: o navegador rejeita a resposta nesse caso. Se um dia
+    # a API passar a usar cookie/sessão, isso precisa virar True E
+    # FRONTEND_ORIGIN precisa ser obrigatoriamente uma origem explícita
+    # (nunca "*") em produção.
+    allow_credentials=False,
     allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["*"],
 )

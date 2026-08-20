@@ -2,9 +2,10 @@
 import logging
 from collections import Counter, defaultdict
 
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.models import RawLudosSnapshot, Student, School, Turma, StudentProgress, MetricSnapshot
 from app.institutions import get_institution
 
@@ -138,16 +139,25 @@ def _parse_iso(valor) -> "dt.datetime | None":
     quanto com sufixo 'Z' ('2026-09-15T10:30:00Z', usado no log de acesso)
     — 'Z' vira '+00:00' antes de converter, pra funcionar em qualquer
     versão do Python, não só 3.11+. Devolve None se vier vazio ou em
-    formato inesperado — nesse caso quem chamou usa 'agora' como aproximação."""
+    formato inesperado — nesse caso quem chamou usa 'agora' como aproximação.
+
+    Sempre devolve um datetime com timezone (UTC quando a string não traz
+    offset nenhum) — nunca naive. calcular_alerta_aluno() subtrai o valor
+    devolvido aqui de um datetime.now(timezone.utc); se algum dia a Ludos
+    mandar uma data sem offset, fromisoformat() devolveria naive e essa
+    subtração quebraria com TypeError."""
     if not valor:
         return None
     texto = str(valor)
     if texto.endswith("Z"):
         texto = texto[:-1] + "+00:00"
     try:
-        return dt.datetime.fromisoformat(texto)
+        parsed = dt.datetime.fromisoformat(texto)
     except ValueError:
         return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=dt.timezone.utc)
+    return parsed
 
 
 def _upsert_progress(
@@ -410,6 +420,28 @@ def rebuild_metrics(db: Session) -> None:
     # mesmo GroupName.
     school_turma_cache: dict = {}
     students_by_id, player_extra = _upsert_students(db, players, school_turma_cache)
+
+    # Se /report/players veio cortado pela cota da Ludos nesta rodada (ver
+    # LudosClient._get_single), students_by_id só cobre quem apareceu no
+    # payload parcial. Sem isso, um aluno BLOCKED/staff de uma sincronização
+    # anterior que não caiu nesse recorte ficaria de fora do dict e
+    # _process_trilha deixaria de filtrá-lo (a checagem lá só exclui quando
+    # encontra o Student), voltando a contar como ativo/engajado por engano.
+    # Complementamos com quem já existe no banco, usando o último status
+    # conhecido, pra manter o filtro "fail closed" em vez de "fail open".
+    performance_ids = {
+        str(_field(perf, "playerId", "player_id", "id", "PlayerId", default=""))
+        for perf in performance
+    }
+    missing_ids = performance_ids - students_by_id.keys()
+    missing_ids.discard("")
+    if missing_ids:
+        rows_existentes = db.execute(
+            select(Student).where(Student.external_id.in_(missing_ids))
+        ).scalars().all()
+        for s in rows_existentes:
+            students_by_id[s.external_id] = s
+
     _aplicar_ultimo_acesso(db, students_by_id, login_log)
 
     for trilha_id, trilha_nome in TRILHAS.items():
@@ -418,4 +450,20 @@ def rebuild_metrics(db: Session) -> None:
             player_extra, students_by_id, school_turma_cache,
         )
 
+    _limpar_snapshots_antigos(db)
     db.commit()
+
+
+def _limpar_snapshots_antigos(db: Session) -> None:
+    """Apaga MetricSnapshot mais velho que METRIC_SNAPSHOT_RETENTION_DAYS.
+    Só o snapshot_date mais recente por trilha é lido pelo dashboard hoje
+    (ver _latest_date_for_trilha em app/routers/dashboard.py) — sem essa
+    limpeza, cada sync (geral + módulo + escola/turma, x instituição, x
+    trilha) empilha um lote novo de linhas pra sempre. Roda a cada
+    rebuild_metrics(), então nunca deixa a tabela crescer além da janela
+    de retenção configurada."""
+    cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=settings.metric_snapshot_retention_days)
+    resultado = db.execute(delete(MetricSnapshot).where(MetricSnapshot.snapshot_date < cutoff))
+    if resultado.rowcount:
+        logger.info("Limpeza de metric_snapshot: %s linhas com mais de %sd removidas.",
+                     resultado.rowcount, settings.metric_snapshot_retention_days)

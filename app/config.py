@@ -12,6 +12,14 @@ class Settings(BaseSettings):
 
     frontend_origin: str = "*"
 
+    # Cada sync grava um lote novo de MetricSnapshot (geral + módulo +
+    # escola/turma, x instituição, x trilha) e nada nunca apagava os
+    # antigos — a tabela crescia sem limite. Só o snapshot_date mais
+    # recente por trilha é lido pelo dashboard hoje; guardamos essa
+    # janela (padrão 90 dias) pra sobrar espaço pra uma futura feature
+    # de tendência histórica sem deixar a tabela crescer pra sempre.
+    metric_snapshot_retention_days: int = 90
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
 

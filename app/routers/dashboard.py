@@ -278,5 +278,7 @@ def get_alertas(instituicao: str = "todas", db: Session = Depends(get_db)):
 @router.post("/sync/run")
 def trigger_manual_sync():
     from app.ingestion.sync_job import run_sync
-    run_sync()
+    executou = run_sync()
+    if not executou:
+        return {"status": "sincronização já em andamento em outro processo — nada foi feito"}
     return {"status": "sincronização executada"}
