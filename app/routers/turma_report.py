@@ -55,14 +55,21 @@ def _buscar_relatorio_turma(db: Session, nome: str) -> dict:
 
     alunos = db.execute(select(Student).where(Student.turma_id == turma.id)).scalars().all()
 
-    linhas = []
-    for aluno in alunos:
-        progresso = db.execute(
+    # Uma única query pra todos os alunos da turma, em vez de um SELECT de
+    # StudentProgress por aluno dentro do loop (N+1 queries).
+    progresso_por_aluno: dict[int, StudentProgress] = {}
+    if alunos:
+        progress_rows = db.execute(
             select(StudentProgress).where(
-                StudentProgress.student_id == aluno.id,
+                StudentProgress.student_id.in_([a.id for a in alunos]),
                 StudentProgress.trail_external_id == "41",
             )
-        ).scalar_one_or_none()
+        ).scalars().all()
+        progresso_por_aluno = {p.student_id: p for p in progress_rows}
+
+    linhas = []
+    for aluno in alunos:
+        progresso = progresso_por_aluno.get(aluno.id)
         status = progresso.status if progresso else "inscrito"
         dias_sem_acesso, alerta, motivo_alerta = calcular_alerta_aluno(aluno.last_access)
         linhas.append({

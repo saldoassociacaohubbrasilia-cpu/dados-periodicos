@@ -240,10 +240,14 @@ def get_alertas(instituicao: str = "todas", db: Session = Depends(get_db)):
     """
     inst_filtro = normalize_institution(instituicao)
 
-    alunos = db.execute(select(Student)).scalars().all()
+    # Join único com Turma em vez de um db.get(Turma, ...) por aluno dentro
+    # do loop — evita N+1 queries (uma por aluno) nessa listagem.
+    rows = db.execute(
+        select(Student, Turma).outerjoin(Turma, Turma.id == Student.turma_id)
+    ).all()
 
     alertas = []
-    for aluno in alunos:
+    for aluno, turma in rows:
         # Mesma regra do resto do dashboard: Bloqueado nunca entra,
         # mesmo que ele também esteja sem acesso há muito tempo — ele
         # já não conta como aluno ativo do programa. Conta de professor/
@@ -255,7 +259,6 @@ def get_alertas(instituicao: str = "todas", db: Session = Depends(get_db)):
         if not alerta:
             continue
 
-        turma = db.get(Turma, aluno.turma_id) if aluno.turma_id else None
         nome_turma = turma.name if turma else "Sem Turma"
         inst_aluno = get_institution(nome_turma)
 
