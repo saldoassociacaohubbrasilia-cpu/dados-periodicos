@@ -1,3 +1,8 @@
+# DEPRECADO: schema agora é gerenciado pelo Alembic (ver alembic/versions/
+# e README). Pra criar as tabelas num banco novo, rode `alembic upgrade
+# head` em vez deste script — create_all() só cria tabela que não existe,
+# nunca aplica uma migração incremental numa tabela já existente.
+
 from app.database import engine
 from app.models import Base
 

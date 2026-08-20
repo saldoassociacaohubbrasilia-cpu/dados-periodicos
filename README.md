@@ -67,13 +67,21 @@ SYNC_INTERVAL_HOURS=6
 FRONTEND_ORIGIN=http://localhost:5500
 ```
 
+Crie/atualize as tabelas com o Alembic:
+
+```bash
+alembic upgrade head
+```
+
+> **Banco já existente, criado antes do Alembic entrar no projeto?** Não rode `upgrade head` direto — as tabelas já existem e o comando tentaria recriá-las. Rode `alembic stamp head` uma única vez: isso só marca o banco como já estando na revisão `baseline schema` (que espelha exatamente o schema atual), sem executar nenhum `CREATE TABLE`. Depois disso, toda mudança de schema nova (nova coluna, nova tabela) vira uma migration incremental de verdade — nunca mais precisa de script de reset manual.
+
 Suba a API:
 
 ```bash
 uvicorn app.main:app --reload
 ```
 
-Isso já cria as tabelas e liga o agendador. Pra não esperar o primeiro ciclo:
+Isso liga o agendador (o schema já foi criado/atualizado pelo Alembic no passo anterior). Pra não esperar o primeiro ciclo:
 
 ```bash
 curl -X POST http://localhost:8000/api/v1/sync/run
@@ -81,7 +89,7 @@ curl -X POST http://localhost:8000/api/v1/sync/run
 
 Abra `frontend/dashboard.html` com o Live Server (porta 5500) e pronto.
 
-> **Mudou `app/models.py`?** `create_all()` só cria tabelas novas, não adiciona coluna em tabela existente. Rode `python scripts/reset_metric_snapshot.py` uma vez — é seguro, essa tabela é 100% recalculada a cada sync.
+> **Mudou `app/models.py`?** Gere a migration com `alembic revision --autogenerate -m "descrição da mudança"`, confira o arquivo gerado em `alembic/versions/` (autogenerate nem sempre acerta 100%) e rode `alembic upgrade head`.
 
 ---
 
