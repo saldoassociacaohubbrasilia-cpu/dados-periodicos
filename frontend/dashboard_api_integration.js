@@ -178,10 +178,7 @@ function renderizarTabelaTurmas(turmas) {
         tbody.innerHTML = `
             <tr>
                 <td colspan="6">
-                    <div class="empty-state">
-                        <span class="empty-state-icon" aria-hidden="true"></span>
-                        Nenhuma turma com dado disponível para esse filtro ainda.
-                    </div>
+                    <div class="empty-state">Nenhuma turma com dado disponível para esse filtro ainda.</div>
                 </td>
             </tr>`;
         return;
@@ -287,10 +284,7 @@ function abrirModalTurma(nomeTurma) {
                 tbody.innerHTML = `
                     <tr>
                         <td colspan="7">
-                            <div class="empty-state">
-                                <span class="empty-state-icon" aria-hidden="true"></span>
-                                Nenhum aluno encontrado nesta turma.
-                            </div>
+                            <div class="empty-state">Nenhum aluno encontrado nesta turma.</div>
                         </td>
                     </tr>`;
                 return;

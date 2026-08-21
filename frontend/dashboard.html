@@ -497,31 +497,13 @@
 
         /* ---------- Estados vazios ---------- */
         /* Enquanto uma turma/trilha ainda não tem dado (ex: inscrições em
-           andamento), mostra a cruz da marca em vez de tabela/gráfico em
+           andamento), mostra uma mensagem em vez de tabela/gráfico em
            branco — deixa claro que é "ainda não tem dado", não "quebrado". */
         .empty-state {
-            display: flex; flex-direction: column; align-items: center;
-            gap: 12px;
             padding: 40px 20px;
             color: var(--text-muted);
             font: var(--body-lg);
             text-align: center;
-        }
-
-        .empty-state-icon {
-            width: 40px; height: 40px;
-            border-radius: 12px;
-            background: color-mix(in srgb, var(--cyan) 14%, white);
-            position: relative;
-            flex-shrink: 0;
-        }
-
-        .empty-state-icon::before {
-            content: "";
-            position: absolute; inset: 10px;
-            background: var(--cyan);
-            -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='9' y='1' width='6' height='22' rx='3'/%3E%3Crect x='1' y='9' width='22' height='6' rx='3'/%3E%3C/svg%3E") center / contain no-repeat;
-            mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='9' y='1' width='6' height='22' rx='3'/%3E%3Crect x='1' y='9' width='22' height='6' rx='3'/%3E%3C/svg%3E") center / contain no-repeat;
         }
 
         .chart-empty { padding: 20px 20px 8px; }
@@ -662,7 +644,6 @@
             </div>
             <canvas id="cEngajamentoEscola"></canvas>
             <div class="empty-state chart-empty" id="empty-cEngajamentoEscola" hidden>
-                <span class="empty-state-icon" aria-hidden="true"></span>
                 Nenhuma escola/turma com dado disponível para esse filtro ainda.
             </div>
         </div>
@@ -672,7 +653,6 @@
             </div>
             <canvas id="cTrilhas"></canvas>
             <div class="empty-state chart-empty" id="empty-cTrilhas" hidden>
-                <span class="empty-state-icon" aria-hidden="true"></span>
                 Nenhum módulo com dado disponível para esse filtro ainda.
             </div>
         </div>
