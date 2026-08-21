@@ -9,12 +9,16 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import Turma, Student, StudentProgress
-from app.ingestion.transform import calcular_alerta_aluno
+from app.ingestion.transform import calcular_alerta_aluno, TRILHAS
 
 router = APIRouter(prefix="/api/v1/turma", tags=["relatorio-turma"])
 
 NAVY = "#002364"
 GREEN = "#10B981"
+
+# Mesmo default usado em app/routers/dashboard.py — precisa bater com a
+# mesma chave em app/ingestion/transform.py:TRILHAS.
+TRILHA_PADRAO = "41"
 
 STATUS_LABEL = {"concluido": "Concluído", "engajado": "Engajado", "inscrito": "Inscrito"}
 
@@ -48,7 +52,7 @@ def _normalizar_0_100(valores: list[float]) -> list[float]:
     return [(v - minimo) / (maximo - minimo) * 100 for v in valores]
 
 
-def _buscar_relatorio_turma(db: Session, nome: str) -> dict:
+def _buscar_relatorio_turma(db: Session, nome: str, trilha: str = TRILHA_PADRAO) -> dict:
     turma = db.execute(select(Turma).where(Turma.name == nome)).scalar_one_or_none()
     if turma is None:
         raise HTTPException(status_code=404, detail=f"Turma '{nome}' não encontrada.")
@@ -56,13 +60,17 @@ def _buscar_relatorio_turma(db: Session, nome: str) -> dict:
     alunos = db.execute(select(Student).where(Student.turma_id == turma.id)).scalars().all()
 
     # Uma única query pra todos os alunos da turma, em vez de um SELECT de
-    # StudentProgress por aluno dentro do loop (N+1 queries).
+    # StudentProgress por aluno dentro do loop (N+1 queries). Antes era
+    # fixo em trail_external_id == "41" (Trilha Saldo+) — o relatório da
+    # turma sempre mostrava o progresso da Saldo+ mesmo quando a Trilha
+    # Pocket estava selecionada no dashboard. Agora respeita o mesmo
+    # parâmetro `trilha` que /api/v1/dashboard já usa.
     progresso_por_aluno: dict[int, StudentProgress] = {}
     if alunos:
         progress_rows = db.execute(
             select(StudentProgress).where(
                 StudentProgress.student_id.in_([a.id for a in alunos]),
-                StudentProgress.trail_external_id == "41",
+                StudentProgress.trail_external_id == trilha,
             )
         ).scalars().all()
         progresso_por_aluno = {p.student_id: p for p in progress_rows}
@@ -102,6 +110,7 @@ def _buscar_relatorio_turma(db: Session, nome: str) -> dict:
     return {
         "turma": turma.name,
         "escola": turma.school.name if turma.school else turma.name,
+        "trilha": TRILHAS.get(trilha, trilha),
         "total_alunos": len(linhas),
         "engajados": sum(1 for l in linhas if l["progresso_pct"] > 0),
         "concluintes": sum(1 for l in linhas if l["progresso_pct"] >= 100),
@@ -111,20 +120,21 @@ def _buscar_relatorio_turma(db: Session, nome: str) -> dict:
 
 
 @router.get("/relatorio")
-def get_relatorio_turma(nome: str, db: Session = Depends(get_db)):
-    """Dados do relatório de uma turma — usado pelo modal 'Ver Alunos' no dashboard."""
-    return _buscar_relatorio_turma(db, nome)
+def get_relatorio_turma(nome: str, trilha: str = TRILHA_PADRAO, db: Session = Depends(get_db)):
+    """Dados do relatório de uma turma — usado pelo modal 'Ver Alunos' no dashboard.
+    Passe ?trilha=43 para o progresso na Trilha Pocket (default: 41, Saldo+)."""
+    return _buscar_relatorio_turma(db, nome, trilha)
 
 
 @router.get("/relatorio/pdf")
-def get_relatorio_turma_pdf(nome: str, db: Session = Depends(get_db)):
+def get_relatorio_turma_pdf(nome: str, trilha: str = TRILHA_PADRAO, db: Session = Depends(get_db)):
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import cm
     from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
-    dados = _buscar_relatorio_turma(db, nome)
+    dados = _buscar_relatorio_turma(db, nome, trilha)
 
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -136,7 +146,7 @@ def get_relatorio_turma_pdf(nome: str, db: Session = Depends(get_db)):
     subtitulo_style = ParagraphStyle("SubtituloSaldo", parent=styles["Normal"], textColor=colors.HexColor("#64748B"), fontSize=9)
 
     story = [
-        Paragraph(f"Saldo+ — Relatório da turma {dados['turma']}", titulo_style),
+        Paragraph(f"{dados['trilha']} — Relatório da turma {dados['turma']}", titulo_style),
         Paragraph(f"Gerado em {datetime.now(timezone.utc).strftime('%d/%m/%Y %H:%M')} (UTC)", subtitulo_style),
         Spacer(1, 14),
         Paragraph(
@@ -171,7 +181,9 @@ def get_relatorio_turma_pdf(nome: str, db: Session = Depends(get_db)):
     doc.build(story)
     buffer.seek(0)
 
-    filename = f"relatorio_{_slug(dados['turma'])}.pdf"
+    # Slug da trilha no nome do arquivo pra não sobrescrever o PDF de
+    # Saldo+ com o de Pocket (ou vice-versa) da mesma turma.
+    filename = f"relatorio_{_slug(dados['turma'])}_{_slug(dados['trilha'])}.pdf"
     return StreamingResponse(
         buffer, media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
@@ -179,18 +191,18 @@ def get_relatorio_turma_pdf(nome: str, db: Session = Depends(get_db)):
 
 
 @router.get("/relatorio/excel")
-def get_relatorio_turma_excel(nome: str, db: Session = Depends(get_db)):
+def get_relatorio_turma_excel(nome: str, trilha: str = TRILHA_PADRAO, db: Session = Depends(get_db)):
     from openpyxl import Workbook
     from openpyxl.styles import Alignment, Font, PatternFill
 
-    dados = _buscar_relatorio_turma(db, nome)
+    dados = _buscar_relatorio_turma(db, nome, trilha)
 
     wb = Workbook()
     ws = wb.active
     ws.title = "Relatório da Turma"
 
     ws.merge_cells("A1:E1")
-    ws["A1"] = f"Saldo+ — Relatório da turma {dados['turma']}"
+    ws["A1"] = f"{dados['trilha']} — Relatório da turma {dados['turma']}"
     ws["A1"].font = Font(name="Arial", size=14, bold=True, color="FFFFFF")
     ws["A1"].fill = PatternFill("solid", fgColor=NAVY.lstrip("#"))
     ws["A1"].alignment = Alignment(horizontal="left", vertical="center")
@@ -230,7 +242,7 @@ def get_relatorio_turma_excel(nome: str, db: Session = Depends(get_db)):
     wb.save(buffer)
     buffer.seek(0)
 
-    filename = f"relatorio_{_slug(dados['turma'])}.xlsx"
+    filename = f"relatorio_{_slug(dados['turma'])}_{_slug(dados['trilha'])}.xlsx"
     return StreamingResponse(
         buffer,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
