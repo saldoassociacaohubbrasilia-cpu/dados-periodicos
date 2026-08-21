@@ -233,7 +233,11 @@ function abrirModalTurma(nomeTurma) {
     document.querySelector('#tabela-alunos-turma tbody').innerHTML =
         '<tr><td colspan="4">Carregando alunos...</td></tr>';
 
-    const params = `nome=${encodeURIComponent(nomeTurma)}`;
+    // Repassa a trilha selecionada no dashboard (Saldo+ = 41, Pocket = 43)
+    // pro relatório da turma e pros exports — sem isso, esses três
+    // sempre mostravam o progresso da Saldo+ mesmo com a Pocket selecionada.
+    const trilhaId = document.getElementById('trilha-select').value;
+    const params = `nome=${encodeURIComponent(nomeTurma)}&trilha=${encodeURIComponent(trilhaId)}`;
     document.getElementById('modal-baixar-pdf').href = `${API_BASE}/turma/relatorio/pdf?${params}`;
     document.getElementById('modal-baixar-excel').href = `${API_BASE}/turma/relatorio/excel?${params}`;
 
@@ -243,7 +247,10 @@ function abrirModalTurma(nomeTurma) {
             return res.json();
         })
         .then(dados => {
-            document.getElementById('modal-turma-escola').textContent = dados.escola || '—';
+            // Mostra a trilha junto da escola, pra ficar claro qual das duas
+            // (Saldo+ ou Pocket) esse relatório está descrevendo.
+            document.getElementById('modal-turma-escola').textContent =
+                dados.escola ? `${dados.escola} · ${dados.trilha}` : (dados.trilha || '—');
             document.getElementById('modal-resumo').innerHTML = `
                 <span><strong>${fmtInt(dados.total_alunos)}</strong>alunos</span>
                 <span><strong>${fmtInt(dados.engajados)}</strong>engajados</span>
