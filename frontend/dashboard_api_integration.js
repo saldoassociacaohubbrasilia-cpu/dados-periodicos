@@ -102,67 +102,90 @@ function atualizarMapa(dadosEscolas, instituicaoId) {
     focarRegiao(INSTITUICAO_PARA_REGIAO[instituicaoId] || 'brasil');
 }
 
+// Mostra o estado vazio "de marca" em vez de um gráfico sem barra
+// nenhuma (que parece quebrado) quando o filtro atual não tem dado.
+function alternarEstadoVazio(idCanvas, temDado) {
+    const canvas = document.getElementById(idCanvas);
+    const vazio = document.getElementById(`empty-${idCanvas}`);
+    if (canvas) canvas.hidden = !temDado;
+    if (vazio) vazio.hidden = temDado;
+}
+
 // --- Renderização de Gráficos (Chart.js) ---
 function renderizarGraficos(dadosEscolas, dadosModulos) {
+    alternarEstadoVazio('cEngajamentoEscola', dadosEscolas.length > 0);
+    alternarEstadoVazio('cTrilhas', dadosModulos.length > 0);
+
+    if (chartEscolas) { chartEscolas.destroy(); chartEscolas = null; }
+    if (chartTrilhas) { chartTrilhas.destroy(); chartTrilhas = null; }
+
     // Ranking de verdade: ordena por % de engajamento (não por
     // quantidade de inscritos, que é só o tamanho da turma) — assim o
     // gráfico mostra quem está engajando melhor, do topo pra base.
-    const escolasRankeadas = [...dadosEscolas].sort((a, b) => b.engajamento_pct - a.engajamento_pct);
-
-    // Gráfico de Ranking de Escolas
-    const ctxEscolas = document.getElementById('cEngajamentoEscola');
-    if (chartEscolas) chartEscolas.destroy();
-
-    chartEscolas = new Chart(ctxEscolas, {
-        type: 'bar',
-        data: {
-            labels: escolasRankeadas.map(e => e.nome),
-            datasets: [{
-                label: '% de Engajamento',
-                data: escolasRankeadas.map(e => e.engajamento_pct),
-                backgroundColor: escolasRankeadas.map((_, i) => PALETA[i % PALETA.length]),
-                borderRadius: 8,
-                maxBarThickness: 42
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: { legend: { display: false } },
-            scales: {
-                x: { grid: { display: false } },
-                y: { grid: { color: '#E5E7EB' }, beginAtZero: true, max: 100 }
+    if (dadosEscolas.length) {
+        const escolasRankeadas = [...dadosEscolas].sort((a, b) => b.engajamento_pct - a.engajamento_pct);
+        chartEscolas = new Chart(document.getElementById('cEngajamentoEscola'), {
+            type: 'bar',
+            data: {
+                labels: escolasRankeadas.map(e => e.nome),
+                datasets: [{
+                    label: '% de Engajamento',
+                    data: escolasRankeadas.map(e => e.engajamento_pct),
+                    backgroundColor: escolasRankeadas.map((_, i) => PALETA[i % PALETA.length]),
+                    borderRadius: 8,
+                    maxBarThickness: 42
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { grid: { display: false } },
+                    y: { grid: { color: '#E5E7EB' }, beginAtZero: true, max: 100 }
+                }
             }
-        }
-    });
+        });
+    }
 
-    // Gráfico de Módulos/Trilhas
-    const ctxTrilhas = document.getElementById('cTrilhas');
-    if (chartTrilhas) chartTrilhas.destroy();
-
-    chartTrilhas = new Chart(ctxTrilhas, {
-        type: 'doughnut',
-        data: {
-            labels: dadosModulos.map(m => m.nome),
-            datasets: [{
-                data: dadosModulos.map(m => m.total_alunos),
-                backgroundColor: [NAVY, CYAN, ORANGE, MAGENTA],
-                borderWidth: 2,
-                borderColor: '#FFFFFF'
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, padding: 14 } } }
-        }
-    });
+    if (dadosModulos.length) {
+        chartTrilhas = new Chart(document.getElementById('cTrilhas'), {
+            type: 'doughnut',
+            data: {
+                labels: dadosModulos.map(m => m.nome),
+                datasets: [{
+                    data: dadosModulos.map(m => m.total_alunos),
+                    backgroundColor: [NAVY, CYAN, ORANGE, MAGENTA],
+                    borderWidth: 2,
+                    borderColor: '#FFFFFF'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, padding: 14 } } }
+            }
+        });
+    }
 }
 
 // --- Renderização da Tabela de Turmas ---
 function renderizarTabelaTurmas(turmas) {
     const tbody = document.querySelector('#tabela-turmas tbody');
     tbody.innerHTML = ''; // Limpa a tabela
+
+    if (!turmas.length) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="6">
+                    <div class="empty-state">
+                        <span class="empty-state-icon" aria-hidden="true"></span>
+                        Nenhuma turma com dado disponível para esse filtro ainda.
+                    </div>
+                </td>
+            </tr>`;
+        return;
+    }
 
     turmas.forEach(t => {
         const tr = document.createElement('tr');
@@ -261,7 +284,15 @@ function abrirModalTurma(nomeTurma) {
             tbody.innerHTML = '';
 
             if (!dados.alunos.length) {
-                tbody.innerHTML = '<tr><td colspan="4">Nenhum aluno encontrado nesta turma.</td></tr>';
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="7">
+                            <div class="empty-state">
+                                <span class="empty-state-icon" aria-hidden="true"></span>
+                                Nenhum aluno encontrado nesta turma.
+                            </div>
+                        </td>
+                    </tr>`;
                 return;
             }
 
