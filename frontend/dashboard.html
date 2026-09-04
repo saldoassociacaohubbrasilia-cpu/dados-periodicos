@@ -4,553 +4,237 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Dashboard Saldo+</title>
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%23002364'/%3E%3Crect x='10' y='4' width='4' height='16' rx='2' fill='%23F98105'/%3E%3Crect x='4' y='10' width='16' height='4' rx='2' fill='%23F98105'/%3E%3C/svg%3E">
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%23002364'/%3E%3Crect x='10' y='4' width='4' height='16' rx='2' fill='%23EC8322'/%3E%3Crect x='4' y='10' width='16' height='4' rx='2' fill='%23EC8322'/%3E%3C/svg%3E">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
         :root {
+            /* Paleta oficial Saldo+ — extraída do CSS publicado em
+               osaldopositivo.com.br (--e-global-color-* do kit Elementor). */
             --navy: #002364;
-            --cyan: #11B2A8;
-            --orange: #F98105;
-            --magenta: #E72485;
-            --black: #000000;
+            --navy-ink: #0A2E6E;
+            --teal: #00B4AA;
+            --orange: #EC8322;
+            --pink: #FC027D;
+            --purple: #605BE5;
             --green: #10B981;
             --yellow: #EAB308;
-            --bg: #F1F5F9;
-            --card: #FFFFFF;
-            /* Cor primária de texto — identidade visual oficial (Figma Saldo+) */
-            --text: var(--cyan);
-            --text-on-dark: #FFFFFF;
-            --text-muted: #64748B;
-            --border: #E2E8F0;
-            --radius-lg: 18px;
-            --radius-md: 12px;
-            --shadow: 0 1px 2px rgba(15,23,42,0.04), 0 10px 24px -14px rgba(15,23,42,0.18);
-            --shadow-hover: 0 4px 10px rgba(15,23,42,0.06), 0 16px 32px -14px rgba(15,23,42,0.22);
 
-            /* Escala tipográfica oficial (Figma Saldo+) — 'font' é um atalho
-               que já define peso, tamanho, altura de linha e família juntos. */
-            --title-lg: 800 40px/1.15 'Poppins', sans-serif;
-            --title-sm: 700 32px/1.2 'Poppins', sans-serif;
-            --subtitle-lg: 600 28px/1.25 'Poppins', sans-serif;
-            --subtitle-sm: 600 22px/1.3 'Poppins', sans-serif;
-            --body-lg: 500 16px/1.4 'Poppins', sans-serif;
-            --body-sm: 500 12px/1.4 'Poppins', sans-serif;
+            --bg: #F5F6FA;
+            --surface: #FFFFFF;
+            --surface-2: #F0F2F8;
+            --ink: #1B2140;
+            --muted: #6B7192;
+            --border: #E4E6F0;
+
+            --good: #0E9F6E; --good-bg: #E7F7F1;
+            --warn: #B5650F; --warn-bg: #FBF0E2;
+            --info-bg: #E8F6F4;
+
+            --radius-lg: 20px;
+            --radius-md: 14px;
+            --radius-pill: 999px;
+            --font: 'Poppins', system-ui, sans-serif;
         }
 
         * { box-sizing: border-box; }
 
         body {
-            font-family: 'Poppins', system-ui, sans-serif;
-            background: linear-gradient(160deg, #EFF6FF 0%, #FAF5FF 45%, #FFF7ED 100%);
-            background-attachment: fixed;
-            color: var(--text);
+            font-family: var(--font);
+            background: var(--bg);
+            color: var(--ink);
             margin: 0;
-            padding: 32px 24px 60px;
         }
 
-        .dashboard-container { max-width: 1240px; margin: 0 auto; overflow-x: hidden; }
+        h1, h2, h3 { font-family: var(--font); margin: 0; }
+        table { border-collapse: collapse; width: 100%; }
+        .num { font-variant-numeric: tabular-nums; }
+        abbr[title] { text-decoration: underline dotted; text-decoration-color: var(--muted); cursor: help; }
 
-        /* Forma geométrica única por trás de toda a identidade Saldo+: a
-           cruz arredondada. Reaparece em três escalas — a marca no
-           cabeçalho, a bolinha de cada título de seção e o brasão nos
-           cantos dos cards — pra reforçar a mesma "assinatura" em vez de
-           usar formas soltas (bolinha, estrela) sem relação entre si. */
+        /* ---------- Barra + (padrão de marca Saldo+) ---------- */
+        .barra-mais {
+            height: 14px;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='40' viewBox='0 0 160 40'%3E%3Crect x='8' y='16' width='24' height='8' rx='4' fill='%23EC8322'/%3E%3Crect x='16' y='8' width='8' height='24' rx='4' fill='%23EC8322'/%3E%3Crect x='48' y='16' width='24' height='8' rx='4' fill='%2300B4AA'/%3E%3Crect x='56' y='8' width='8' height='24' rx='4' fill='%2300B4AA'/%3E%3Crect x='88' y='16' width='24' height='8' rx='4' fill='%23FC027D'/%3E%3Crect x='96' y='8' width='8' height='24' rx='4' fill='%23FC027D'/%3E%3Crect x='128' y='16' width='24' height='8' rx='4' fill='%23605BE5'/%3E%3Crect x='136' y='8' width='8' height='24' rx='4' fill='%23605BE5'/%3E%3C/svg%3E");
+            background-repeat: repeat-x;
+            background-size: 80px 14px;
+        }
 
         /* ---------- Cabeçalho ---------- */
-        .page-header {
-            display: flex;
-            flex-wrap: wrap;
-            align-items: flex-end;
-            justify-content: space-between;
-            gap: 16px;
-            padding-bottom: 32px;
-            margin-bottom: 28px;
-            position: relative;
-            overflow: hidden;
-        }
+        .topo { background: linear-gradient(155deg, var(--navy) 0%, var(--navy-ink) 100%); color: #fff; padding: 26px 32px 0; }
+        .topo-inner { max-width: 1180px; margin: 0 auto; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 18px; padding-bottom: 22px; }
 
-        .page-header::after {
-            content: "";
-            position: absolute;
-            left: 0; right: 0; bottom: 0;
-            height: 22px;
-            /* "Barra +" da identidade visual: cruzes navy/laranja/rosa/turquesa
-               se repetindo lado a lado (ver Figma Saldo+ > Barra +). */
-            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='40' viewBox='0 0 160 40'%3E%3Crect x='8' y='16' width='24' height='8' rx='4' fill='%23002364'/%3E%3Crect x='16' y='8' width='8' height='24' rx='4' fill='%23002364'/%3E%3Crect x='48' y='16' width='24' height='8' rx='4' fill='%23F98105'/%3E%3Crect x='56' y='8' width='8' height='24' rx='4' fill='%23F98105'/%3E%3Crect x='88' y='16' width='24' height='8' rx='4' fill='%23E72485'/%3E%3Crect x='96' y='8' width='8' height='24' rx='4' fill='%23E72485'/%3E%3Crect x='128' y='16' width='24' height='8' rx='4' fill='%2311B2A8'/%3E%3Crect x='136' y='8' width='8' height='24' rx='4' fill='%2311B2A8'/%3E%3C/svg%3E");
-            background-repeat: repeat-x;
-            background-size: 100px 20px;
-            background-position: left bottom;
-            opacity: 0.9;
-        }
+        .marca { display: flex; align-items: center; gap: 14px; }
+        .marca-icone { width: 46px; height: 46px; border-radius: 13px; background: var(--orange); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .marca-icone svg { width: 24px; height: 24px; }
+        .marca-nome { font-size: 26px; font-weight: 800; letter-spacing: -.3px; margin: 0; }
+        .marca-nome span { color: var(--orange); }
+        .marca-sub { margin: 2px 0 0; font-size: 13px; font-weight: 500; color: #C3D0F0; }
 
-        /* Selo/ícone da marca: a cruz laranja sobre navy, mesmo desenho da
-           Barra + — dá um "app icon" de verdade em vez de só texto colorido. */
-        .brand-lockup { display: flex; align-items: center; gap: 12px; }
-
-        .brand-mark {
-            width: 46px; height: 46px;
-            border-radius: 13px;
-            flex-shrink: 0;
-            display: flex; align-items: center; justify-content: center;
-            background: linear-gradient(145deg, var(--navy), color-mix(in srgb, var(--navy) 70%, var(--cyan)));
-            box-shadow: 0 4px 10px color-mix(in srgb, var(--navy) 40%, transparent);
-        }
-
-        .brand-mark svg { width: 22px; height: 22px; }
-
-        .brand {
-            font: var(--title-lg);
-            letter-spacing: -0.5px;
-            margin: 0;
-            color: var(--navy);
-        }
-
-        /* O "+" da marca, em laranja */
-        .brand-plus {
-            color: var(--orange);
-        }
-
-        .subtitle {
-            margin: 2px 0 0;
-            color: var(--text-muted);
-            font: var(--body-lg);
-        }
-
-        /* ---------- Filtro ---------- */
-        .filter-bar { display: flex; align-items: center; gap: 10px; }
-
-        .filter-label {
-            font-weight: 600;
-            font-size: 13px;
-            color: var(--text-muted);
-            text-transform: uppercase;
-            letter-spacing: 0.04em;
-        }
-
+        .filtros { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+        .filtro-rotulo { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: #9FB1E0; margin-right: 2px; }
         select#instituicao-select, select#trilha-select {
-            appearance: none;
-            -webkit-appearance: none;
-            font-family: inherit;
-            font-weight: 600;
-            font-size: 14px;
-            color: var(--navy);
-            background: var(--card) url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23002364' stroke-width='2.5' stroke-linecap='round'><path d='M6 9l6 6 6-6'/></svg>") no-repeat right 14px center;
-            background-size: 14px;
-            border: 1.5px solid var(--border);
-            border-radius: 999px;
-            padding: 10px 38px 10px 18px;
-            box-shadow: var(--shadow);
-            cursor: pointer;
+            appearance: none; -webkit-appearance: none;
+            font-family: var(--font); font-weight: 600; font-size: 13.5px; color: var(--navy);
+            background: #fff url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23002364' stroke-width='2.5' stroke-linecap='round'><path d='M6 9l6 6 6-6'/></svg>") no-repeat right 14px center;
+            background-size: 13px; border: none; border-radius: var(--radius-pill);
+            padding: 11px 36px 11px 18px; cursor: pointer;
         }
+        select#instituicao-select:focus-visible, select#trilha-select:focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; }
 
-        select#instituicao-select:focus-visible, select#trilha-select:focus-visible {
-            outline: 2px solid var(--cyan);
-            outline-offset: 2px;
+        /* ---------- Abas ---------- */
+        .abas { max-width: 1180px; margin: 0 auto; display: flex; gap: 4px; overflow-x: auto; }
+        .aba-btn {
+            font-family: var(--font); font-size: 13.5px; font-weight: 600; color: #B9C6EA;
+            background: transparent; border: none; padding: 12px 18px 14px; cursor: pointer; white-space: nowrap;
+            border-bottom: 3px solid transparent;
         }
+        .aba-btn.ativa { color: #fff; border-bottom-color: var(--orange); }
+        .aba-btn:focus-visible { outline: 2px solid var(--orange); outline-offset: -2px; }
 
-        /* ---------- Grids ---------- */
-        .kpi-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-            gap: 16px;
-            margin-bottom: 20px;
-        }
+        /* ---------- Container ---------- */
+        .wrap { max-width: 1180px; margin: 0 auto; padding: 28px 24px 64px; }
+        .pagina { display: none; }
+        .pagina.ativa { display: block; }
 
-        .destaque-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
-            gap: 16px;
-            margin-bottom: 32px;
-        }
-
-        .charts-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
-            gap: 20px;
-            margin-bottom: 28px;
-        }
-
-        /* ---------- Cartões base ---------- */
-        .card {
-            background: var(--card);
-            border-radius: var(--radius-lg);
-            box-shadow: var(--shadow);
-            border: 1px solid var(--border);
-        }
+        /* ---------- KPIs ---------- */
+        .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; margin-bottom: 16px; }
+        .kpi { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 18px 18px 16px; display: flex; flex-direction: column; gap: 8px; }
 
         @media (prefers-reduced-motion: no-preference) {
-            .card { transition: box-shadow .18s ease, transform .18s ease; }
-            .card:hover { box-shadow: var(--shadow-hover); transform: translateY(-2px); }
+            .kpi, .destaque, .secao { transition: box-shadow .18s ease, transform .18s ease; }
+            .kpi:hover, .destaque:hover, .secao:hover { transform: translateY(-2px); }
         }
 
-        /* ---------- Ícones (SVG em linha) ---------- */
-        .icon { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-
-        /* ---------- KPI cards ---------- */
-        .kpi-card {
-            padding: 18px 18px 16px;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            position: relative;
-            overflow: hidden;
-            background: linear-gradient(160deg, color-mix(in srgb, var(--accent, var(--navy)) 9%, white) 0%, white 65%);
-        }
-
-        .kpi-card::before {
-            content: "";
-            position: absolute;
-            top: 0; left: 0; right: 0;
-            height: 5px;
-            background: var(--accent, var(--navy));
-        }
-
-        /* Brasão discreto da cruz no canto do card, "vazando" pra fora —
-           mesmo desenho da marca, quase invisível, só textura de marca. */
-        .kpi-card::after {
-            content: "";
-            position: absolute;
-            bottom: -20px; right: -20px;
-            width: 74px; height: 74px;
-            background: var(--accent, var(--navy));
-            -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='9' y='1' width='6' height='22' rx='3'/%3E%3Crect x='1' y='9' width='22' height='6' rx='3'/%3E%3C/svg%3E") center / contain no-repeat;
-            mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='9' y='1' width='6' height='22' rx='3'/%3E%3Crect x='1' y='9' width='22' height='6' rx='3'/%3E%3C/svg%3E") center / contain no-repeat;
-            opacity: 0.09;
-            pointer-events: none;
-        }
-
-        .kpi-icon {
-            width: 38px; height: 38px;
-            border-radius: 11px;
-            display: flex; align-items: center; justify-content: center;
-            color: var(--accent, var(--navy));
-            background: color-mix(in srgb, var(--accent, var(--navy)) 18%, white);
-            box-shadow: 0 3px 8px color-mix(in srgb, var(--accent, var(--navy)) 30%, transparent);
-        }
-
-        @media (prefers-reduced-motion: no-preference) {
-            .kpi-icon { transition: transform .25s ease; }
-            .card:hover .kpi-icon { transform: scale(1.08) rotate(-4deg); }
-        }
-
-        .kpi-label {
-            font: var(--body-sm);
-            color: var(--text-muted);
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-        }
-
-        .kpi-value {
-            font: var(--title-sm);
-            color: var(--text);
-            line-height: 1.1;
-        }
+        .kpi-topo { display: flex; align-items: center; justify-content: space-between; }
+        .kpi-icone { width: 34px; height: 34px; border-radius: 10px; display: flex; align-items: center; justify-content: center; color: #fff; flex-shrink: 0; }
+        .kpi-icone svg { width: 17px; height: 17px; }
+        .kpi-rotulo { font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+        .kpi-valor { font-size: 28px; font-weight: 800; line-height: 1; color: var(--ink); }
+        .kpi-tendencia { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; color: var(--good); background: var(--good-bg); padding: 3px 9px; border-radius: var(--radius-pill); width: fit-content; }
 
         /* ---------- Destaques ---------- */
-        .destaque-card {
-            padding: 16px 18px;
-            display: flex;
-            align-items: center;
-            gap: 14px;
-            border-left: 4px solid var(--accent, var(--orange));
-        }
-
-        .destaque-icon {
-            width: 44px; height: 44px;
-            border-radius: 12px;
-            display: flex; align-items: center; justify-content: center;
-            color: var(--accent, var(--orange));
-            background: color-mix(in srgb, var(--accent, var(--orange)) 16%, white);
-            box-shadow: 0 3px 8px color-mix(in srgb, var(--accent, var(--orange)) 28%, transparent);
-            flex-shrink: 0;
-        }
-
-        @media (prefers-reduced-motion: no-preference) {
-            .destaque-icon { transition: transform .25s ease; }
-            .card:hover .destaque-icon { transform: scale(1.08) rotate(-4deg); }
-        }
-
-        .destaque-label {
-            font-size: 11px;
-            font-weight: 600;
-            color: var(--text-muted);
-            text-transform: uppercase;
-            letter-spacing: 0.04em;
-            margin-bottom: 3px;
-        }
-
-        .destaque-value {
-            font: var(--body-lg);
-            font-weight: 700;
-            color: var(--navy);
-        }
+        .destaque-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; margin-bottom: 30px; }
+        .destaque { background: var(--surface-2); border-radius: var(--radius-lg); padding: 16px 18px; display: flex; align-items: center; gap: 14px; }
+        .destaque-icone { width: 40px; height: 40px; border-radius: 11px; background: var(--surface); display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: var(--navy); border: 1px solid var(--border); }
+        .destaque-icone svg { width: 19px; height: 19px; }
+        .destaque-rotulo { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 3px; }
+        .destaque-valor { font: 700 15px/1.3 var(--font); color: var(--ink); }
 
         /* ---------- Seções ---------- */
-        .section {
-            padding: 22px 24px;
-            margin-bottom: 24px;
-        }
+        .secao { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 24px 26px; margin-bottom: 20px; }
+        .secao-cabecalho { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 6px; }
+        .secao-titulo { font-size: 16px; font-weight: 700; color: var(--ink); display: flex; align-items: center; gap: 9px; }
+        .secao-titulo::before { content: ""; width: 9px; height: 9px; border-radius: 3px; background: var(--accent, var(--teal)); flex-shrink: 0; }
+        .secao-nota { font-size: 12px; color: var(--muted); font-weight: 500; }
+        .secao-sub { font-size: 12.5px; color: var(--muted); margin: 0 0 4px; }
+        .secao-calc { font-size: 11.5px; color: var(--muted); font-style: italic; margin: 0 0 16px; }
 
-        .section-header {
-            display: flex;
-            align-items: baseline;
-            justify-content: space-between;
-            margin-bottom: 16px;
-        }
+        .graficos-grid { display: grid; grid-template-columns: 1.15fr 1fr; gap: 18px; margin-bottom: 20px; }
+        @media (max-width: 820px) { .graficos-grid { grid-template-columns: 1fr; } }
+        canvas { max-height: 280px; }
 
-        .section-title {
-            font: var(--subtitle-sm);
-            color: var(--navy);
-            margin: 0;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
+        /* ---------- Caixas de contexto ---------- */
+        .caixa { border-radius: var(--radius-md); padding: 11px 15px; font-size: 12.5px; line-height: 1.55; margin-top: 12px; }
+        .caixa:first-child { margin-top: 0; }
+        .caixa strong { font-weight: 700; }
+        .caixa-nota { background: var(--surface-2); color: var(--muted); border-left: 3px solid var(--border); }
+        .caixa-insight { background: var(--info-bg); color: var(--ink); border-left: 3px solid var(--teal); }
+        .caixa-verificado { background: var(--good-bg); color: var(--ink); border-left: 3px solid var(--good); }
+        .caixa-atencao { background: var(--warn-bg); color: var(--ink); border-left: 3px solid var(--warn); }
 
-        .section-title::before {
-            content: "";
-            width: 13px; height: 13px;
-            flex-shrink: 0;
-            background: var(--accent, var(--cyan));
-            /* Mesma cruz arredondada da marca (ver .brand-mark) no lugar da
-               bolinha lisa — a cor continua vindo do --accent de cada seção
-               via mask, então cada título "assina" com a forma da marca. */
-            -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='9' y='1' width='6' height='22' rx='3'/%3E%3Crect x='1' y='9' width='22' height='6' rx='3'/%3E%3C/svg%3E") center / contain no-repeat;
-            mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='9' y='1' width='6' height='22' rx='3'/%3E%3Crect x='1' y='9' width='22' height='6' rx='3'/%3E%3C/svg%3E") center / contain no-repeat;
-        }
+        /* ---------- Estados vazios / carregando ---------- */
+        .empty-state { padding: 40px 20px; color: var(--muted); font: 500 14px/1.4 var(--font); text-align: center; }
+        .chart-empty { padding: 20px 20px 8px; }
+        .carregando { padding: 32px 20px; text-align: center; color: var(--muted); font-size: 13px; font-weight: 500; }
 
-        .section-hint {
-            font-size: 12.5px;
-            color: var(--text-muted);
-            font-weight: 500;
-        }
+        /* ---------- Mapa ---------- */
+        #mapa-escolas { height: 420px; width: 100%; border-radius: var(--radius-md); z-index: 1; }
+        .mapa-legenda { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 14px; font-size: 12px; color: var(--muted); font-weight: 500; }
+        .mapa-legenda span { display: inline-flex; align-items: center; gap: 6px; }
+        .legend-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
 
-        canvas { max-height: 300px; }
-
-        /* ---------- Tabela ---------- */
+        /* ---------- Tabelas ---------- */
         .table-wrap { overflow-x: auto; border-radius: var(--radius-md); border: 1px solid var(--border); }
-
-        table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
-
-        thead th {
-            background: #F8FAFC;
-            color: var(--navy);
-            font-weight: 700;
-            font-size: 11.5px;
-            text-transform: uppercase;
-            letter-spacing: 0.04em;
-            padding: 12px 14px;
-            text-align: left;
-            border-bottom: 1px solid var(--border);
-        }
-
-        tbody td {
-            padding: 12px 14px;
-            border-bottom: 1px solid var(--border);
-            color: var(--text);
-        }
-
+        table { font-size: 13.5px; }
+        thead th { background: var(--surface-2); color: var(--navy); font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; padding: 12px 16px; text-align: left; border-bottom: 1px solid var(--border); }
+        tbody td { padding: 12px 16px; border-bottom: 1px solid var(--border); color: var(--ink); }
         tbody tr:last-child td { border-bottom: none; }
-        tbody tr:hover { background: #F8FAFC; }
+        tbody tr:hover { background: var(--surface-2); }
 
-        .progress-track {
-            background: #E5E7EB;
-            border-radius: 999px;
-            width: 100%;
-            height: 7px;
-            overflow: hidden;
-        }
-
-        .progress-fill {
-            background: linear-gradient(90deg, var(--cyan), var(--navy));
-            height: 100%;
-            border-radius: 999px;
-        }
+        .progress-track { background: var(--border); border-radius: var(--radius-pill); width: 100px; height: 6px; overflow: hidden; }
+        .progress-fill { background: var(--teal); height: 100%; border-radius: var(--radius-pill); }
+        .progress-cel { display: flex; align-items: center; gap: 9px; }
 
         .btn-ver-alunos {
-            padding: 7px 14px;
-            background: linear-gradient(135deg, var(--navy), color-mix(in srgb, var(--navy) 65%, var(--cyan)));
-            color: white;
-            border: none;
-            border-radius: 999px;
-            font-family: inherit;
-            font-size: 12px;
-            font-weight: 600;
-            cursor: pointer;
-            box-shadow: 0 2px 6px color-mix(in srgb, var(--navy) 35%, transparent);
+            padding: 7px 16px; background: var(--orange); color: #fff; border: none; border-radius: var(--radius-pill);
+            font-family: var(--font); font-size: 12px; font-weight: 700; cursor: pointer;
         }
-
         @media (prefers-reduced-motion: no-preference) {
-            .btn-ver-alunos { transition: transform .15s ease, box-shadow .15s ease; }
-            .btn-ver-alunos:hover { transform: translateY(-1px) scale(1.03); box-shadow: 0 5px 12px color-mix(in srgb, var(--navy) 45%, transparent); }
-            .btn-ver-alunos:active { transform: translateY(0) scale(0.98); }
+            .btn-ver-alunos, .btn-download { transition: transform .15s ease, filter .15s ease; }
+            .btn-ver-alunos:hover, .btn-download:hover { transform: translateY(-1px); filter: brightness(1.06); }
         }
+        .btn-ver-alunos:focus-visible { outline: 2px solid var(--navy); outline-offset: 2px; }
 
-        .btn-ver-alunos:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+        .pill-status { display: inline-block; padding: 3px 11px; border-radius: var(--radius-pill); font-size: 11px; font-weight: 700; white-space: nowrap; }
+        .pill-alerta { background: var(--warn-bg); color: var(--warn); }
+        .pill-ok { background: var(--good-bg); color: var(--good); }
 
-        /* ---------- Mapa (fica por último) ---------- */
-        #mapa-escolas {
-            height: 420px;
-            width: 100%;
-            border-radius: var(--radius-md);
-            z-index: 1;
-        }
+        /* ---------- Metodologia ---------- */
+        .formula-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; }
+        .formula-card { background: var(--surface-2); border-radius: var(--radius-md); padding: 16px 18px; }
+        .formula-nome { font-size: 13px; font-weight: 700; color: var(--navy); margin-bottom: 6px; }
+        .formula-expr { font-size: 12.5px; font-weight: 600; color: var(--teal); background: var(--surface); border-radius: 8px; padding: 7px 10px; margin-bottom: 8px; display: inline-block; }
+        .formula-desc { font-size: 12px; color: var(--muted); line-height: 1.5; }
 
-        .map-legend {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 16px;
-            margin-top: 14px;
-            font-size: 12.5px;
-            color: var(--text-muted);
-        }
-
-        .map-legend span { display: inline-flex; align-items: center; gap: 6px; }
-
-        .legend-dot {
-            width: 10px; height: 10px;
-            border-radius: 50%;
-            display: inline-block;
-        }
-
-        /* ---------- Modal: Relatório da Turma ---------- */
-        .modal-overlay {
-            position: fixed; inset: 0;
-            background: rgba(15, 23, 42, 0.45);
-            display: flex; align-items: center; justify-content: center;
-            padding: 24px;
-            z-index: 1000;
-        }
-
+        /* ---------- Modal ---------- */
+        .modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.45); display: flex; align-items: center; justify-content: center; padding: 24px; z-index: 1000; }
         .modal-overlay[hidden] { display: none; }
-
-        .modal-card {
-            background: var(--card);
-            border-radius: var(--radius-lg);
-            box-shadow: var(--shadow-hover);
-            width: 100%; max-width: 640px;
-            max-height: 85vh;
-            display: flex; flex-direction: column;
-            overflow: hidden;
-        }
-
-        .modal-header {
-            display: flex; align-items: flex-start; justify-content: space-between;
-            gap: 16px;
-            padding: 22px 24px 16px;
-            border-bottom: 1px solid var(--border);
-        }
-
+        .modal-card { background: var(--surface); border-radius: var(--radius-lg); box-shadow: 0 20px 60px rgba(0,0,0,.25); width: 100%; max-width: 640px; max-height: 85vh; display: flex; flex-direction: column; overflow: hidden; }
+        .modal-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 22px 24px 16px; border-bottom: 1px solid var(--border); }
         .modal-title { margin: 0; font-size: 18px; font-weight: 700; color: var(--navy); }
-        .modal-subtitle { margin: 2px 0 0; font-size: 13px; color: var(--text-muted); }
-
-        .modal-close {
-            background: none; border: none; cursor: pointer;
-            color: var(--text-muted);
-            padding: 4px; border-radius: 8px; flex-shrink: 0;
-        }
-
-        .modal-close:hover { background: #F1F5F9; color: var(--navy); }
-        .modal-close:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
-
-        .modal-resumo {
-            display: flex; gap: 20px; flex-wrap: wrap;
-            padding: 16px 24px 4px;
-            font-size: 12.5px; color: var(--text-muted);
-        }
-
+        .modal-subtitle { margin: 2px 0 0; font-size: 13px; color: var(--muted); }
+        .modal-close { background: none; border: none; cursor: pointer; color: var(--muted); padding: 4px; border-radius: 8px; flex-shrink: 0; }
+        .modal-close:hover { background: var(--surface-2); color: var(--navy); }
+        .modal-close:focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; }
+        .modal-resumo { display: flex; gap: 20px; flex-wrap: wrap; padding: 16px 24px 4px; font-size: 12.5px; color: var(--muted); }
         .modal-resumo strong { color: var(--navy); font-size: 15px; display: block; }
-
         .modal-body { overflow-y: auto; }
-
         .modal-table-wrap { margin: 12px 24px 20px; }
-
-        .modal-footer {
-            display: flex; gap: 10px; justify-content: flex-end;
-            padding: 16px 24px; border-top: 1px solid var(--border);
-        }
-
-        .btn-download {
-            display: inline-flex; align-items: center; gap: 6px;
-            padding: 9px 18px;
-            border-radius: 999px;
-            font-family: inherit;
-            font-size: 13px; font-weight: 600;
-            text-decoration: none;
-            cursor: pointer;
-            border: none;
-            box-shadow: 0 2px 6px rgba(15,23,42,0.16);
-        }
-
+        .modal-footer { display: flex; gap: 10px; justify-content: flex-end; padding: 16px 24px; border-top: 1px solid var(--border); }
+        .btn-download { display: inline-flex; align-items: center; gap: 6px; padding: 9px 18px; border-radius: var(--radius-pill); font-family: var(--font); font-size: 13px; font-weight: 700; text-decoration: none; cursor: pointer; border: none; }
         .btn-download-pdf { background: var(--navy); color: white; }
         .btn-download-excel { background: var(--green); color: white; }
+        .btn-download:focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; }
 
-        @media (prefers-reduced-motion: no-preference) {
-            .btn-download { transition: transform .15s ease, box-shadow .15s ease, filter .15s ease; }
-            .btn-download:hover { transform: translateY(-2px); box-shadow: 0 8px 16px rgba(15,23,42,0.22); filter: brightness(1.08); }
-            .btn-download:active { transform: translateY(0); filter: brightness(0.95); }
-        }
-
-        .btn-download:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
-
-        /* ---------- Estados vazios ---------- */
-        /* Enquanto uma turma/trilha ainda não tem dado (ex: inscrições em
-           andamento), mostra uma mensagem em vez de tabela/gráfico em
-           branco — deixa claro que é "ainda não tem dado", não "quebrado". */
-        .empty-state {
-            padding: 40px 20px;
-            color: var(--text-muted);
-            font: var(--body-lg);
-            text-align: center;
-        }
-
-        .chart-empty { padding: 20px 20px 8px; }
+        .icon { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
         /* ---------- Rodapé ---------- */
-        .page-footer { margin-top: 44px; text-align: center; }
-
-        .footer-bar {
-            height: 12px;
-            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='40' viewBox='0 0 160 40'%3E%3Crect x='8' y='16' width='24' height='8' rx='4' fill='%23002364'/%3E%3Crect x='16' y='8' width='8' height='24' rx='4' fill='%23002364'/%3E%3Crect x='48' y='16' width='24' height='8' rx='4' fill='%23F98105'/%3E%3Crect x='56' y='8' width='8' height='24' rx='4' fill='%23F98105'/%3E%3Crect x='88' y='16' width='24' height='8' rx='4' fill='%23E72485'/%3E%3Crect x='96' y='8' width='8' height='24' rx='4' fill='%23E72485'/%3E%3Crect x='128' y='16' width='24' height='8' rx='4' fill='%2311B2A8'/%3E%3Crect x='136' y='8' width='8' height='24' rx='4' fill='%2311B2A8'/%3E%3C/svg%3E");
-            background-repeat: repeat-x;
-            background-size: 64px 12px;
-            background-position: center;
-            opacity: 0.85;
-            margin-bottom: 16px;
-        }
-
-        .footer-text {
-            font-size: 12.5px;
-            color: var(--text-muted);
-            margin: 0;
-        }
-
-        .footer-text strong { color: var(--navy); }
+        .rodape { text-align: center; padding: 44px 20px 10px; }
+        .rodape p { font-size: 12.5px; color: var(--muted); margin: 14px 0 0; }
+        .rodape strong { color: var(--ink); }
     </style>
 </head>
 <body>
 
-<div class="dashboard-container">
-
-    <div class="page-header">
-        <div class="brand-lockup">
-            <span class="brand-mark" aria-hidden="true">
-                <svg viewBox="0 0 24 24"><rect x="9" y="1" width="6" height="22" rx="3" fill="var(--orange)"/><rect x="1" y="9" width="22" height="6" rx="3" fill="var(--orange)"/></svg>
+<header class="topo">
+    <div class="topo-inner">
+        <div class="marca">
+            <span class="marca-icone" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="#fff"><rect x="9" y="1" width="6" height="22" rx="3"/><rect x="1" y="9" width="22" height="6" rx="3"/></svg>
             </span>
             <div>
-                <p class="brand">Saldo<span class="brand-plus">+</span></p>
-                <p class="subtitle">Painel de acompanhamento — Trilha Saldo+</p>
+                <p class="marca-nome">Saldo<span>+</span></p>
+                <p class="marca-sub">Painel de acompanhamento · consolidado hoje</p>
             </div>
         </div>
-        <div class="filter-bar">
-            <label class="filter-label" for="trilha-select">Trilha</label>
+        <div class="filtros">
+            <span class="filtro-rotulo">Trilha</span>
             <select id="trilha-select">
                 <option value="41">Trilha Saldo+</option>
                 <option value="43">Trilha Pocket</option>
             </select>
-            <label class="filter-label" for="instituicao-select">Instituição</label>
+            <span class="filtro-rotulo">Instituição</span>
             <select id="instituicao-select">
                 <option value="todas">Todas as Instituições</option>
                 <option value="secretaria">Secretaria de Educação</option>
@@ -558,158 +242,233 @@
             </select>
         </div>
     </div>
+    <nav class="abas" role="tablist" aria-label="Seções do painel">
+        <button class="aba-btn ativa" data-pagina="visao" role="tab" aria-selected="true">1 · Visão Geral</button>
+        <button class="aba-btn" data-pagina="turmas" role="tab" aria-selected="false">2 · Escolas e Turmas</button>
+        <button class="aba-btn" data-pagina="alertas" role="tab" aria-selected="false">3 · Sistema de Alertas</button>
+        <button class="aba-btn" data-pagina="metodologia" role="tab" aria-selected="false">4 · Metodologia</button>
+    </nav>
+</header>
+<div class="barra-mais" aria-hidden="true"></div>
 
-    <!-- KPIs -->
-    <div class="kpi-grid">
-        <div class="card kpi-card" style="--accent: var(--navy)">
-            <div class="kpi-icon">
-                <svg class="icon" viewBox="0 0 24 24"><path d="M6 22V4a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v18"/><path d="M6 12h10"/><path d="M6 8h10"/><path d="M9 22v-4h2v4"/></svg>
-            </div>
-            <div class="kpi-label">Total de Escolas</div>
-            <div class="kpi-value" id="kpi-escolas">--</div>
-        </div>
-        <div class="card kpi-card" style="--accent: var(--cyan)">
-            <div class="kpi-icon">
-                <svg class="icon" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-            </div>
-            <div class="kpi-label">Alunos Inscritos</div>
-            <div class="kpi-value" id="kpi-inscritos">--</div>
-        </div>
-        <div class="card kpi-card" style="--accent: var(--orange)">
-            <div class="kpi-icon">
-                <svg class="icon" viewBox="0 0 24 24"><path d="M13 2 3 14h7l-1 8 10-12h-7l1-8z"/></svg>
-            </div>
-            <div class="kpi-label">Alunos Engajados</div>
-            <div class="kpi-value" id="kpi-engajados">--</div>
-        </div>
-        <div class="card kpi-card" style="--accent: var(--magenta)">
-            <div class="kpi-icon">
-                <svg class="icon" viewBox="0 0 24 24"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg>
-            </div>
-            <div class="kpi-label">Taxa de Engajamento</div>
-            <div class="kpi-value" id="kpi-taxa-engajamento">--%</div>
-        </div>
-        <div class="card kpi-card" style="--accent: var(--green)">
-            <div class="kpi-icon">
-                <svg class="icon" viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10"/><path d="M20.49 15a9 9 0 0 1-14.85 3.36L1 14"/></svg>
-            </div>
-            <div class="kpi-label">Taxa de Retenção</div>
-            <div class="kpi-value" id="kpi-taxa-retencao">--%</div>
-        </div>
-        <div class="card kpi-card" style="--accent: var(--yellow)">
-            <div class="kpi-icon">
-                <svg class="icon" viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-            </div>
-            <div class="kpi-label">Pontuação Média</div>
-            <div class="kpi-value" id="kpi-pontuacao-media">--</div>
-        </div>
-        <div class="card kpi-card" style="--accent: var(--cyan)">
-            <div class="kpi-icon">
-                <svg class="icon" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-            </div>
-            <div class="kpi-label">Ativos na Última Semana</div>
-            <div class="kpi-value" id="kpi-ativos-semana">--</div>
-            <small id="kpi-ativos-semana-variacao" style="color: var(--text-muted); font-weight: 600;"></small>
-        </div>
-    </div>
+<main class="wrap">
 
-    <!-- Destaques -->
-    <div class="destaque-grid">
-        <div class="card destaque-card" style="--accent: var(--yellow)">
-            <div class="destaque-icon">
-                <svg class="icon" viewBox="0 0 24 24" style="width:22px;height:22px;"><circle cx="12" cy="8" r="7"/><path d="M8.5 14.5 7 22l5-3 5 3-1.5-7.5"/></svg>
-            </div>
-            <div>
-                <div class="destaque-label">Escola/turma com mais inscritos</div>
-                <div class="destaque-value" id="destaque-inscritos">—</div>
-            </div>
-        </div>
-        <div class="card destaque-card" style="--accent: var(--orange)">
-            <div class="destaque-icon">
-                <svg class="icon" viewBox="0 0 24 24" style="width:22px;height:22px;"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg>
-            </div>
-            <div>
-                <div class="destaque-label">Escola/turma com mais engajados</div>
-                <div class="destaque-value" id="destaque-engajados">—</div>
-            </div>
-        </div>
-        <div class="card destaque-card" style="--accent: var(--cyan)">
-            <div class="destaque-icon">
-                <svg class="icon" viewBox="0 0 24 24" style="width:22px;height:22px;"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/></svg>
-            </div>
-            <div>
-                <div class="destaque-label">Módulo em destaque</div>
-                <div class="destaque-value" id="destaque-modulo">—</div>
-            </div>
-        </div>
-    </div>
+    <!-- ==================== ABA 1 · VISÃO GERAL ==================== -->
+    <section class="pagina ativa" id="pg-visao">
 
-    <!-- Gráficos -->
-    <div class="charts-grid">
-        <div class="card section">
-            <div class="section-header">
-                <h3 class="section-title" style="--accent: var(--cyan)">Ranking de Engajamento por Escola</h3>
+        <div class="kpi-grid">
+            <div class="kpi">
+                <div class="kpi-topo"><span class="kpi-icone" style="background:var(--navy)"><svg class="icon" viewBox="0 0 24 24" stroke="#fff"><path d="M6 22V4a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v18"/><path d="M6 12h10"/><path d="M6 8h10"/><path d="M9 22v-4h2v4"/></svg></span></div>
+                <div class="kpi-rotulo">Escolas</div>
+                <div class="kpi-valor num" id="kpi-escolas">--</div>
             </div>
-            <canvas id="cEngajamentoEscola"></canvas>
-            <div class="empty-state chart-empty" id="empty-cEngajamentoEscola" hidden>
-                Nenhuma escola/turma com dado disponível para esse filtro ainda.
+            <div class="kpi">
+                <div class="kpi-topo"><span class="kpi-icone" style="background:var(--teal)"><svg class="icon" viewBox="0 0 24 24" stroke="#fff"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M8 4v5"/></svg></span></div>
+                <div class="kpi-rotulo">Turmas</div>
+                <div class="kpi-valor num" id="kpi-turmas">--</div>
+            </div>
+            <div class="kpi">
+                <div class="kpi-topo"><span class="kpi-icone" style="background:var(--purple)"><svg class="icon" viewBox="0 0 24 24" stroke="#fff"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span></div>
+                <div class="kpi-rotulo">Alunos Inscritos</div>
+                <div class="kpi-valor num" id="kpi-inscritos">--</div>
+            </div>
+            <div class="kpi">
+                <div class="kpi-topo"><span class="kpi-icone" style="background:var(--orange)"><svg class="icon" viewBox="0 0 24 24" stroke="#fff"><path d="M13 2 3 14h7l-1 8 10-12h-7l1-8z"/></svg></span></div>
+                <div class="kpi-rotulo">Alunos Engajados</div>
+                <div class="kpi-valor num" id="kpi-engajados">--</div>
+            </div>
+            <div class="kpi">
+                <div class="kpi-topo"><span class="kpi-icone" style="background:var(--pink)"><svg class="icon" viewBox="0 0 24 24" stroke="#fff"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg></span></div>
+                <div class="kpi-rotulo"><abbr title="Engajados ÷ Inscritos">Taxa de Engajamento</abbr></div>
+                <div class="kpi-valor num" id="kpi-taxa-engajamento">--%</div>
+            </div>
+            <div class="kpi">
+                <div class="kpi-topo"><span class="kpi-icone" style="background:var(--green)"><svg class="icon" viewBox="0 0 24 24" stroke="#fff"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10"/><path d="M20.49 15a9 9 0 0 1-14.85 3.36L1 14"/></svg></span></div>
+                <div class="kpi-rotulo"><abbr title="Concluintes ÷ Engajados">Taxa de Retenção</abbr></div>
+                <div class="kpi-valor num" id="kpi-taxa-retencao">--%</div>
+            </div>
+            <div class="kpi">
+                <div class="kpi-topo"><span class="kpi-icone" style="background:var(--yellow)"><svg class="icon" viewBox="0 0 24 24" stroke="#fff"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></span></div>
+                <div class="kpi-rotulo">Pontuação Média</div>
+                <div class="kpi-valor num" id="kpi-pontuacao-media">--</div>
+            </div>
+            <div class="kpi">
+                <div class="kpi-topo"><span class="kpi-icone" style="background:var(--navy)"><svg class="icon" viewBox="0 0 24 24" stroke="#fff"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></span></div>
+                <div class="kpi-rotulo">Ativos · Últimos 7 dias</div>
+                <div class="kpi-valor num" id="kpi-ativos-semana">--</div>
+                <small id="kpi-ativos-semana-variacao" style="color: var(--muted); font-weight: 600; font-size: 11px;"></small>
             </div>
         </div>
-        <div class="card section">
-            <div class="section-header">
-                <h3 class="section-title" style="--accent: var(--magenta)">Distribuição de Alunos por Módulo</h3>
+
+        <div class="destaque-grid">
+            <div class="destaque">
+                <span class="destaque-icone"><svg class="icon" viewBox="0 0 24 24" style="width:22px;height:22px;"><circle cx="12" cy="8" r="7"/><path d="M8.5 14.5 7 22l5-3 5 3-1.5-7.5"/></svg></span>
+                <div><div class="destaque-rotulo">Mais inscritos</div><div class="destaque-valor" id="destaque-inscritos">—</div></div>
             </div>
-            <canvas id="cTrilhas"></canvas>
-            <div class="empty-state chart-empty" id="empty-cTrilhas" hidden>
-                Nenhum módulo com dado disponível para esse filtro ainda.
+            <div class="destaque">
+                <span class="destaque-icone"><svg class="icon" viewBox="0 0 24 24" style="width:22px;height:22px;"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg></span>
+                <div><div class="destaque-rotulo">Mais engajados</div><div class="destaque-valor" id="destaque-engajados">—</div></div>
+            </div>
+            <div class="destaque">
+                <span class="destaque-icone"><svg class="icon" viewBox="0 0 24 24" style="width:22px;height:22px;"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/></svg></span>
+                <div><div class="destaque-rotulo">Módulo em destaque</div><div class="destaque-valor" id="destaque-modulo">—</div></div>
             </div>
         </div>
-    </div>
 
-    <!-- Tabela -->
-    <div class="card section">
-        <div class="section-header">
-            <h3 class="section-title" style="--accent: var(--navy)">Detalhamento de Turmas</h3>
+        <div class="graficos-grid">
+            <div class="secao">
+                <div class="secao-cabecalho">
+                    <h3 class="secao-titulo" style="--accent: var(--teal)">Ranking de Engajamento por Escola</h3>
+                </div>
+                <p class="secao-calc">Cálculo: engajamento da escola = alunos engajados ÷ alunos inscritos naquela escola</p>
+                <canvas id="cEngajamentoEscola"></canvas>
+                <div class="empty-state chart-empty" id="empty-cEngajamentoEscola" hidden>
+                    Nenhuma escola/turma com dado disponível para esse filtro ainda.
+                </div>
+                <div class="caixa caixa-insight" id="insight-escolas" hidden></div>
+            </div>
+            <div class="secao">
+                <div class="secao-cabecalho">
+                    <h3 class="secao-titulo" style="--accent: var(--pink)">Distribuição de Alunos por Módulo</h3>
+                </div>
+                <p class="secao-calc">Cálculo: módulo mais avançado de cada aluno, a partir das atividades concluídas (dado real, não estimado)</p>
+                <canvas id="cTrilhas"></canvas>
+                <div class="empty-state chart-empty" id="empty-cTrilhas" hidden>
+                    Nenhum módulo com dado disponível para esse filtro ainda.
+                </div>
+                <div class="caixa caixa-verificado"><strong>✓ Dado real</strong> — vem de /report/play/course (jogada por aluno/módulo/atividade), não de estimativa.</div>
+            </div>
         </div>
-        <div class="table-wrap">
-            <table id="tabela-turmas">
-                <thead>
-                    <tr>
-                        <th>Turma</th>
-                        <th>Escola</th>
-                        <th>Total de Alunos</th>
-                        <th>Alunos Engajados</th>
-                        <th>Progresso Médio</th>
-                        <th>Ação</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <!-- Preenchido via JavaScript -->
-                </tbody>
-            </table>
-        </div>
-    </div>
 
-    <!-- Mapa (por último) -->
-    <div class="card section">
-        <div class="section-header">
-            <h3 class="section-title" style="--accent: var(--orange)">Distribuição Geográfica</h3>
-            <span class="section-hint">Cor do marcador = faixa de engajamento</span>
+        <div class="secao">
+            <div class="secao-cabecalho">
+                <h3 class="secao-titulo" style="--accent: var(--orange)">Distribuição Geográfica</h3>
+                <span class="secao-nota">Cor do marcador = faixa de engajamento</span>
+            </div>
+            <div id="mapa-escolas"></div>
+            <div class="mapa-legenda">
+                <span><span class="legend-dot" style="background: var(--teal)"></span>Acima de 70%</span>
+                <span><span class="legend-dot" style="background: var(--orange)"></span>Entre 40% e 70%</span>
+                <span><span class="legend-dot" style="background: var(--pink)"></span>Abaixo de 40%</span>
+            </div>
         </div>
-        <div id="mapa-escolas"></div>
-        <div class="map-legend">
-            <span><span class="legend-dot" style="background: var(--cyan)"></span>Acima de 70%</span>
-            <span><span class="legend-dot" style="background: var(--orange)"></span>Entre 40% e 70%</span>
-            <span><span class="legend-dot" style="background: var(--magenta)"></span>Abaixo de 40%</span>
+
+    </section>
+
+    <!-- ==================== ABA 2 · ESCOLAS E TURMAS ==================== -->
+    <section class="pagina" id="pg-turmas">
+        <div class="caixa caixa-nota">Cada turma pertence a uma escola real (mapeamento manual, ainda em validação com a Secretaria) — a Ludos só tem o conceito de turma, não de escola.</div>
+
+        <div class="secao">
+            <div class="secao-cabecalho">
+                <h3 class="secao-titulo" style="--accent: var(--navy)">Detalhamento de Turmas</h3>
+            </div>
+            <div class="table-wrap">
+                <table id="tabela-turmas">
+                    <thead>
+                        <tr>
+                            <th>Turma</th>
+                            <th>Escola</th>
+                            <th>Total de Alunos</th>
+                            <th>Alunos Engajados</th>
+                            <th>Progresso Médio</th>
+                            <th>Ação</th>
+                        </tr>
+                    </thead>
+                    <tbody><!-- Preenchido via JavaScript --></tbody>
+                </table>
+            </div>
         </div>
-    </div>
+    </section>
 
-    <footer class="page-footer">
-        <div class="footer-bar" aria-hidden="true"></div>
-        <p class="footer-text">Programa <strong>Saldo+</strong> · Impact Hub Brasília, em parceria com a Secretaria de Educação e a CVP</p>
-    </footer>
+    <!-- ==================== ABA 3 · SISTEMA DE ALERTAS ==================== -->
+    <section class="pagina" id="pg-alertas">
+        <div class="caixa caixa-nota">Alunos sem acesso recente — nunca inclui aluno Bloqueado ou conta de gestor/professor.</div>
 
-</div>
+        <div class="secao">
+            <div class="secao-cabecalho">
+                <h3 class="secao-titulo" style="--accent: var(--pink)">Alunos sem acesso recente</h3>
+                <span class="secao-nota" id="alertas-total"></span>
+            </div>
+            <p class="secao-calc">Cálculo: em alerta = nunca acessou, ou passaram mais de 10 dias desde o último acesso</p>
+            <div class="table-wrap">
+                <table id="tabela-alertas">
+                    <thead>
+                        <tr><th>Aluno</th><th>Turma</th><th>Instituição</th><th>Situação</th></tr>
+                    </thead>
+                    <tbody><tr><td colspan="4"><div class="carregando">Carregando alertas...</div></td></tr></tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <!-- ==================== ABA 4 · METODOLOGIA ==================== -->
+    <section class="pagina" id="pg-metodologia">
+        <div class="secao">
+            <div class="secao-cabecalho">
+                <h3 class="secao-titulo" style="--accent: var(--teal)">Como cada indicador é calculado</h3>
+            </div>
+            <p class="secao-sub" style="margin-bottom:18px;">Transparência sobre a origem e a fórmula de cada número do painel.</p>
+            <div class="formula-grid">
+                <div class="formula-card">
+                    <div class="formula-nome">Inscritos</div>
+                    <div class="formula-expr">todo aluno ativo da turma</div>
+                    <div class="formula-desc">Alunos com conta ativa (não Bloqueado, não gestor/professor) vinculados a uma turma da trilha — mesmo quem ainda não começou a jogar.</div>
+                </div>
+                <div class="formula-card">
+                    <div class="formula-nome">Engajados</div>
+                    <div class="formula-expr">progresso &gt; 0%</div>
+                    <div class="formula-desc">Inscritos que já registraram alguma atividade jogada na trilha.</div>
+                </div>
+                <div class="formula-card">
+                    <div class="formula-nome">Taxa de Engajamento</div>
+                    <div class="formula-expr">Engajados ÷ Inscritos</div>
+                    <div class="formula-desc">Fatia dos inscritos que já deu o primeiro passo na trilha.</div>
+                </div>
+                <div class="formula-card">
+                    <div class="formula-nome">Taxa de Retenção</div>
+                    <div class="formula-expr">Concluintes ÷ Engajados</div>
+                    <div class="formula-desc">De quem começou, quantos foram até o fim — diferente da conclusão geral, que divide pelo total de inscritos.</div>
+                </div>
+                <div class="formula-card">
+                    <div class="formula-nome">Ativos · Últimos 7 dias</div>
+                    <div class="formula-expr">último login ≥ hoje − 7 dias</div>
+                    <div class="formula-desc">Usa o registro de acesso da Ludos — não é por trilha, é o último login na plataforma como um todo.</div>
+                </div>
+                <div class="formula-card">
+                    <div class="formula-nome">Módulo do aluno</div>
+                    <div class="formula-expr">maior módulo com atividade concluída</div>
+                    <div class="formula-desc">Dado real de /report/play/course, não estimativa — cada jogada é registrada por módulo e atividade.</div>
+                </div>
+                <div class="formula-card">
+                    <div class="formula-nome">Sistema de Alertas</div>
+                    <div class="formula-expr">nunca acessou OU &gt; 10 dias sem acesso</div>
+                    <div class="formula-desc">Aluno Bloqueado ou conta de gestor nunca entra no alerta, mesmo sem acesso há muito tempo.</div>
+                </div>
+                <div class="formula-card">
+                    <div class="formula-nome">Escola (agregado)</div>
+                    <div class="formula-expr">turmas agrupadas por escola real</div>
+                    <div class="formula-desc">A Ludos só cadastra turma, não escola — o agrupamento por escola real é mantido manualmente.</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="secao">
+            <div class="secao-cabecalho">
+                <h3 class="secao-titulo" style="--accent: var(--orange)">O que ainda não está pronto</h3>
+            </div>
+            <div class="caixa caixa-atencao"><strong>Trilha Pocket:</strong> só tem uma turma associada na Ludos, ainda sem alunos reais (só contas de teste) — por isso os indicadores da Pocket aparecem zerados hoje, de propósito.</div>
+            <div class="caixa caixa-atencao"><strong>CVP:</strong> ainda não tem aluno cadastrado — o filtro existe e já funciona, mas mostra tudo zerado até a CVP entrar de verdade.</div>
+            <div class="caixa caixa-nota"><strong>Coordenadas do mapa:</strong> a maioria das escolas usa endereço oficial confirmado; duas (CED 17 CEI e CEMI 310) usam aproximação de bairro, pendente de confirmação com a Secretaria.</div>
+        </div>
+    </section>
+
+</main>
+
+<footer class="rodape">
+    <div class="barra-mais" style="max-width:220px;margin:0 auto;border-radius:999px;" aria-hidden="true"></div>
+    <p>Programa <strong>Saldo+</strong> · Impact Hub Brasília, em parceria com a Secretaria de Educação e a CVP</p>
+</footer>
 
 <!-- Modal: Relatório da Turma -->
 <div id="modal-turma" class="modal-overlay" hidden>

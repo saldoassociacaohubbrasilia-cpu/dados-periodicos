@@ -1,15 +1,16 @@
 // ============================================================
 // Integração do Dashboard Saldo+
-// Cores da Paleta Saldo+: Navy, Cyan, Orange, Magenta
+// Paleta oficial (extraída do CSS publicado em osaldopositivo.com.br):
+// Navy, Teal, Laranja, Rosa, Roxo
 // ============================================================
 
 const API_BASE = 'https://dados-periodicos.onrender.com/api/v1';
-const NAVY = '#002364', CYAN = '#11B2A8', ORANGE = '#F98105', MAGENTA = '#E72485';
+const NAVY = '#002364', TEAL = '#00B4AA', ORANGE = '#EC8322', PINK = '#FC027D', PURPLE = '#605BE5';
 
 Chart.defaults.font.family = "'Poppins', system-ui, sans-serif";
-Chart.defaults.color = '#64748B';
+Chart.defaults.color = '#6B7192';
 
-const PALETA = [CYAN, ORANGE, MAGENTA, '#10B981', '#EAB308', NAVY];
+const PALETA = [TEAL, ORANGE, PINK, PURPLE, '#10B981', NAVY];
 
 let chartEscolas = null;
 let chartTrilhas = null;
@@ -22,27 +23,19 @@ const fmtPct = (num) => (num || 0).toFixed(1) + '%';
 function setKpi(id, text) { const el = document.getElementById(id); if (el) el.textContent = text; }
 
 // --- Regiões e limites geográficos do mapa ---
-// Coordenadas (lat/lng) e zoom recomendado pra cada recorte, mais os
-// limites que travam o mapa dentro do Brasil.
 const REGIOES_MAPA = {
     brasil: { center: [-14.235, -51.9253], zoom: 4 },
     df: { center: [-15.7939, -47.8828], zoom: 10 },
     sp: { center: [-23.5505, -46.6333], zoom: 10 },
 };
-// Mapeia o valor do filtro de instituição do dashboard ("todas",
-// "secretaria", "cvp") pra região correspondente acima.
 const INSTITUICAO_PARA_REGIAO = { todas: 'brasil', secretaria: 'df', cvp: 'sp' };
 
-// Retângulo (SW, NE) que envolve o Brasil inteiro com uma folga — o
-// mapa "rebate" se o usuário tentar arrastar pra fora disso.
 const LIMITES_BRASIL = [
-    [-35.0, -75.0], // sudoeste
-    [6.0, -32.0],   // nordeste
+    [-35.0, -75.0],
+    [6.0, -32.0],
 ];
 
 // --- Inicialização do Mapa (Leaflet.js) ---
-// Base CartoDB Positron (minimalista, tons claros) + mapa travado no
-// território brasileiro (maxBounds) com zoom limitado (nem rua, nem globo).
 function inicializarMapa() {
     if (!mapaGeografico) {
         mapaGeografico = L.map('mapa-escolas', {
@@ -51,7 +44,7 @@ function inicializarMapa() {
             minZoom: 4,
             maxZoom: 12,
             maxBounds: LIMITES_BRASIL,
-            maxBoundsViscosity: 1.0, // 1.0 = rebate de vez, não deixa "escapar" arrastando
+            maxBoundsViscosity: 1.0,
         });
 
         L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
@@ -62,27 +55,18 @@ function inicializarMapa() {
     }
 }
 
-// Move o mapa suavemente até uma região (flyTo anima o pan+zoom juntos,
-// diferente de setView que troca a visão de uma vez, sem transição).
 function focarRegiao(chave) {
     const regiao = REGIOES_MAPA[chave] || REGIOES_MAPA.brasil;
     mapaGeografico.flyTo(regiao.center, regiao.zoom, { duration: 1.2 });
 }
 
-function focarBrasil() { focarRegiao('brasil'); }
-function focarDF() { focarRegiao('df'); }
-function focarSP() { focarRegiao('sp'); }
-
 function atualizarMapa(dadosEscolas, instituicaoId) {
-    // Remove marcadores antigos
     marcadoresMapa.forEach(m => mapaGeografico.removeLayer(m));
     marcadoresMapa = [];
 
-    // Adiciona novos marcadores (Requer lat/lng vindo do backend)
     dadosEscolas.forEach(escola => {
-        if(escola.lat && escola.lng) {
-            // Cor do marcador baseada no engajamento (ver legenda abaixo do mapa)
-            const cor = escola.engajamento_pct > 70 ? CYAN : (escola.engajamento_pct > 40 ? ORANGE : MAGENTA);
+        if (escola.lat && escola.lng) {
+            const cor = escola.engajamento_pct > 70 ? TEAL : (escola.engajamento_pct > 40 ? ORANGE : PINK);
 
             const circle = L.circleMarker([escola.lat, escola.lng], {
                 color: cor,
@@ -97,13 +81,15 @@ function atualizarMapa(dadosEscolas, instituicaoId) {
         }
     });
 
-    // Foca a região certa pro filtro de instituição selecionado — com
-    // animação suave (focarBrasil/focarDF/focarSP), não um corte seco.
-    focarRegiao(INSTITUICAO_PARA_REGIAO[instituicaoId] || 'brasil');
+    // Só reenquadra na primeira carga de cada filtro de instituição —
+    // se o usuário já deu zoom/pan no mapa manualmente, trocar de trilha
+    // (que não afeta a região) não deveria "chutar" a visão dele de volta.
+    if (atualizarMapa._ultimaInstituicao !== instituicaoId) {
+        focarRegiao(INSTITUICAO_PARA_REGIAO[instituicaoId] || 'brasil');
+        atualizarMapa._ultimaInstituicao = instituicaoId;
+    }
 }
 
-// Mostra o estado vazio "de marca" em vez de um gráfico sem barra
-// nenhuma (que parece quebrado) quando o filtro atual não tem dado.
 function alternarEstadoVazio(idCanvas, temDado) {
     const canvas = document.getElementById(idCanvas);
     const vazio = document.getElementById(`empty-${idCanvas}`);
@@ -111,17 +97,37 @@ function alternarEstadoVazio(idCanvas, temDado) {
     if (vazio) vazio.hidden = temDado;
 }
 
+// Gera uma frase curta e honesta a partir do ranking de escolas — nunca
+// inventa número, só descreve o que já está no gráfico.
+function gerarInsightEscolas(escolas) {
+    const el = document.getElementById('insight-escolas');
+    if (!el) return;
+    if (!escolas.length) { el.hidden = true; return; }
+
+    const comEngajamento = escolas.filter(e => e.engajados > 0);
+    const lider = [...escolas].sort((a, b) => b.engajamento_pct - a.engajamento_pct)[0];
+
+    let texto;
+    if (comEngajamento.length === 0) {
+        texto = `Nenhuma escola tem aluno engajado ainda neste filtro — os ${escolas.length} inscritos ainda não começaram a trilha.`;
+    } else if (comEngajamento.length === 1) {
+        texto = `<strong>${lider.nome}</strong> concentra todo o engajamento real até agora (${fmtPct(lider.engajamento_pct)}) — as outras ${escolas.length - 1} escolas têm alunos inscritos, mas nenhum começou a trilha.`;
+    } else {
+        texto = `<strong>${lider.nome}</strong> lidera com ${fmtPct(lider.engajamento_pct)} de engajamento, entre ${comEngajamento.length} de ${escolas.length} escolas já com algum aluno engajado.`;
+    }
+    el.innerHTML = texto;
+    el.hidden = false;
+}
+
 // --- Renderização de Gráficos (Chart.js) ---
 function renderizarGraficos(dadosEscolas, dadosModulos) {
     alternarEstadoVazio('cEngajamentoEscola', dadosEscolas.length > 0);
     alternarEstadoVazio('cTrilhas', dadosModulos.length > 0);
+    gerarInsightEscolas(dadosEscolas);
 
     if (chartEscolas) { chartEscolas.destroy(); chartEscolas = null; }
     if (chartTrilhas) { chartTrilhas.destroy(); chartTrilhas = null; }
 
-    // Ranking de verdade: ordena por % de engajamento (não por
-    // quantidade de inscritos, que é só o tamanho da turma) — assim o
-    // gráfico mostra quem está engajando melhor, do topo pra base.
     if (dadosEscolas.length) {
         const escolasRankeadas = [...dadosEscolas].sort((a, b) => b.engajamento_pct - a.engajamento_pct);
         chartEscolas = new Chart(document.getElementById('cEngajamentoEscola'), {
@@ -142,7 +148,7 @@ function renderizarGraficos(dadosEscolas, dadosModulos) {
                 plugins: { legend: { display: false } },
                 scales: {
                     x: { grid: { display: false } },
-                    y: { grid: { color: '#E5E7EB' }, beginAtZero: true, max: 100 }
+                    y: { grid: { color: '#E4E6F0' }, beginAtZero: true, max: 100 }
                 }
             }
         });
@@ -155,7 +161,7 @@ function renderizarGraficos(dadosEscolas, dadosModulos) {
                 labels: dadosModulos.map(m => m.nome),
                 datasets: [{
                     data: dadosModulos.map(m => m.total_alunos),
-                    backgroundColor: [NAVY, CYAN, ORANGE, MAGENTA],
+                    backgroundColor: [NAVY, TEAL, PINK, ORANGE, PURPLE],
                     borderWidth: 2,
                     borderColor: '#FFFFFF'
                 }]
@@ -172,7 +178,7 @@ function renderizarGraficos(dadosEscolas, dadosModulos) {
 // --- Renderização da Tabela de Turmas ---
 function renderizarTabelaTurmas(turmas) {
     const tbody = document.querySelector('#tabela-turmas tbody');
-    tbody.innerHTML = ''; // Limpa a tabela
+    tbody.innerHTML = '';
 
     if (!turmas.length) {
         tbody.innerHTML = `
@@ -187,15 +193,15 @@ function renderizarTabelaTurmas(turmas) {
     turmas.forEach(t => {
         const tr = document.createElement('tr');
         tr.innerHTML = `
-            <td style="font-weight: 600; color: ${NAVY};">${t.nome}</td>
+            <td style="font-weight: 700; color: ${NAVY};">${t.nome}</td>
             <td>${t.escola}</td>
-            <td>${fmtInt(t.total_alunos)}</td>
-            <td>${fmtInt(t.alunos_engajados)}</td>
+            <td class="num">${fmtInt(t.total_alunos)}</td>
+            <td class="num">${fmtInt(t.alunos_engajados)}</td>
             <td>
-                <div class="progress-track">
-                    <div class="progress-fill" style="width: ${t.progresso_medio}%;"></div>
+                <div class="progress-cel">
+                    <div class="progress-track" style="width:100px;"><div class="progress-fill" style="width: ${t.progresso_medio}%;"></div></div>
+                    <small class="num">${fmtPct(t.progresso_medio)}</small>
                 </div>
-                <small>${fmtPct(t.progresso_medio)}</small>
             </td>
             <td><button class="btn-ver-alunos" data-turma="${t.nome}">Ver Alunos</button></td>
         `;
@@ -203,9 +209,41 @@ function renderizarTabelaTurmas(turmas) {
     });
 }
 
+// --- Sistema de Alertas ---
+async function carregarAlertas(instituicaoId) {
+    const tbody = document.querySelector('#tabela-alertas tbody');
+    try {
+        const res = await fetch(`${API_BASE}/alertas?instituicao=${instituicaoId}`);
+        if (!res.ok) throw new Error(`Erro na API: ${res.status}`);
+        const dados = await res.json();
+
+        setKpi('alertas-total', `${fmtInt(dados.total_em_alerta)} aluno(s) em alerta`);
+
+        if (!dados.alertas.length) {
+            tbody.innerHTML = `<tr><td colspan="4"><div class="empty-state">Nenhum aluno em alerta para esse filtro — tudo em dia.</div></td></tr>`;
+            return;
+        }
+
+        tbody.innerHTML = '';
+        dados.alertas.forEach(a => {
+            const tr = document.createElement('tr');
+            const rotuloInstituicao = a.instituicao === 'cvp' ? 'CVP' : 'Secretaria de Educação';
+            tr.innerHTML = `
+                <td style="font-weight:600;">${a.nome}</td>
+                <td>${a.turma}</td>
+                <td>${rotuloInstituicao}</td>
+                <td><span class="pill-status pill-alerta">${a.motivo_alerta}</span></td>
+            `;
+            tbody.appendChild(tr);
+        });
+    } catch (err) {
+        console.error('Falha ao carregar Sistema de Alertas:', err);
+        tbody.innerHTML = `<tr><td colspan="4"><div class="empty-state">Não foi possível carregar os alertas agora.</div></td></tr>`;
+    }
+}
+
 // Usuários ativos na última semana não é por trilha (last_access é o
-// último login na Ludos como um todo, não num curso específico) — busca
-// à parte, só reagindo ao filtro de instituição.
+// último login na Ludos como um todo, não num curso específico).
 async function carregarUsuariosAtivos(instituicaoId) {
     try {
         const res = await fetch(`${API_BASE}/usuarios-ativos-semana?instituicao=${instituicaoId}`);
@@ -231,10 +269,8 @@ async function carregarUsuariosAtivos(instituicaoId) {
 // --- Função Principal: Buscar e Atualizar o Dashboard ---
 async function carregarDashboard(instituicaoId, trilhaId) {
     try {
-        // Inicializa o mapa vazio na primeira carga
         inicializarMapa();
 
-        // Bate na API real do seu backend Python!
         const res = await fetch(`${API_BASE}/dashboard?instituicao=${instituicaoId}&trilha=${trilhaId}`);
 
         if (!res.ok) {
@@ -244,22 +280,21 @@ async function carregarDashboard(instituicaoId, trilhaId) {
         const dados = await res.json();
 
         carregarUsuariosAtivos(instituicaoId);
+        carregarAlertas(instituicaoId);
 
-        // Atualiza KPIs com os dados reais do banco
         setKpi('kpi-escolas', fmtInt(dados.kpis.escolas));
+        setKpi('kpi-turmas', fmtInt((dados.turmas || []).length));
         setKpi('kpi-inscritos', fmtInt(dados.kpis.inscritos));
         setKpi('kpi-engajados', fmtInt(dados.kpis.engajados));
         setKpi('kpi-taxa-engajamento', fmtPct(dados.kpis.taxa_engajamento));
         setKpi('kpi-taxa-retencao', fmtPct(dados.kpis.taxa_retencao));
         setKpi('kpi-pontuacao-media', fmtInt(dados.kpis.pontuacao_media));
 
-        // Atualiza os destaques (concentração de alunos e módulo mais avançado)
         const destaque = dados.destaque || {};
         setKpi('destaque-inscritos', destaque.escola_mais_inscritos || '—');
         setKpi('destaque-engajados', destaque.escola_mais_engajados || '—');
         setKpi('destaque-modulo', destaque.modulo_destaque || '—');
 
-        // Atualiza Mapa, Gráficos e Tabelas
         atualizarMapa(dados.escolas, instituicaoId);
         renderizarGraficos(dados.escolas, dados.modulos);
         renderizarTabelaTurmas(dados.turmas);
@@ -280,9 +315,6 @@ function abrirModalTurma(nomeTurma) {
     document.querySelector('#tabela-alunos-turma tbody').innerHTML =
         '<tr><td colspan="4">Carregando alunos...</td></tr>';
 
-    // Repassa a trilha selecionada no dashboard (Saldo+ = 41, Pocket = 43)
-    // pro relatório da turma e pros exports — sem isso, esses três
-    // sempre mostravam o progresso da Saldo+ mesmo com a Pocket selecionada.
     const trilhaId = document.getElementById('trilha-select').value;
     const params = `nome=${encodeURIComponent(nomeTurma)}&trilha=${encodeURIComponent(trilhaId)}`;
     document.getElementById('modal-baixar-pdf').href = `${API_BASE}/turma/relatorio/pdf?${params}`;
@@ -294,8 +326,6 @@ function abrirModalTurma(nomeTurma) {
             return res.json();
         })
         .then(dados => {
-            // Mostra a trilha junto da escola, pra ficar claro qual das duas
-            // (Saldo+ ou Pocket) esse relatório está descrevendo.
             document.getElementById('modal-turma-escola').textContent =
                 dados.escola ? `${dados.escola} · ${dados.trilha}` : (dados.trilha || '—');
             document.getElementById('modal-resumo').innerHTML = `
@@ -320,15 +350,17 @@ function abrirModalTurma(nomeTurma) {
             dados.alunos.forEach(a => {
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
-                    <td style="font-weight: 600; color: ${ORANGE};">${a.posicao_na_turma}º</td>
+                    <td style="font-weight: 700; color: ${ORANGE};">${a.posicao_na_turma}º</td>
                     <td style="font-weight: 600;">${a.nome}</td>
                     <td>${a.login}</td>
                     <td>
-                        <div class="progress-track"><div class="progress-fill" style="width:${a.progresso_pct}%;"></div></div>
-                        <small>${fmtPct(a.progresso_pct)}</small>
+                        <div class="progress-cel">
+                            <div class="progress-track" style="width:80px;"><div class="progress-fill" style="width:${a.progresso_pct}%;"></div></div>
+                            <small class="num">${fmtPct(a.progresso_pct)}</small>
+                        </div>
                     </td>
-                    <td>${fmtInt(a.pontos)}</td>
-                    <td>${fmtInt(a.moedas)}</td>
+                    <td class="num">${fmtInt(a.pontos)}</td>
+                    <td class="num">${fmtInt(a.moedas)}</td>
                     <td>${a.status}</td>
                 `;
                 tbody.appendChild(tr);
@@ -345,15 +377,25 @@ function fecharModalTurma() {
     document.getElementById('modal-turma').hidden = true;
 }
 
+// --- Abas ---
+function ativarAba(nomePagina) {
+    document.querySelectorAll('.aba-btn').forEach(b => {
+        const ativa = b.dataset.pagina === nomePagina;
+        b.classList.toggle('ativa', ativa);
+        b.setAttribute('aria-selected', ativa ? 'true' : 'false');
+    });
+    document.querySelectorAll('.pagina').forEach(p => p.classList.remove('ativa'));
+    const alvo = document.getElementById('pg-' + nomePagina);
+    if (alvo) alvo.classList.add('ativa');
+}
+
 // Event Listeners
 document.addEventListener('DOMContentLoaded', () => {
     const selectFiltro = document.getElementById('instituicao-select');
     const selectTrilha = document.getElementById('trilha-select');
 
-    // Carrega o painel inicialmente com os valores padrão dos filtros
     carregarDashboard(selectFiltro.value, selectTrilha.value);
 
-    // Reage à mudança de qualquer um dos dois filtros
     selectFiltro.addEventListener('change', (e) => {
         carregarDashboard(e.target.value, selectTrilha.value);
     });
@@ -361,7 +403,10 @@ document.addEventListener('DOMContentLoaded', () => {
         carregarDashboard(selectFiltro.value, e.target.value);
     });
 
-    // Delegação de clique: os botões "Ver Alunos" são recriados a cada carregamento
+    document.querySelectorAll('.aba-btn').forEach(btn => {
+        btn.addEventListener('click', () => ativarAba(btn.dataset.pagina));
+    });
+
     document.querySelector('#tabela-turmas tbody').addEventListener('click', (e) => {
         const btn = e.target.closest('.btn-ver-alunos');
         if (btn) abrirModalTurma(btn.dataset.turma);
@@ -369,7 +414,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.getElementById('modal-fechar').addEventListener('click', fecharModalTurma);
     document.getElementById('modal-turma').addEventListener('click', (e) => {
-        if (e.target.id === 'modal-turma') fecharModalTurma(); // clique fora do card fecha o modal
+        if (e.target.id === 'modal-turma') fecharModalTurma();
     });
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') fecharModalTurma();
