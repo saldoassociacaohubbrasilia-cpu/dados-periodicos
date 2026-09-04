@@ -385,6 +385,44 @@
     <section class="pagina" id="pg-alertas">
         <div class="caixa caixa-nota">Alunos sem acesso recente — nunca inclui aluno Bloqueado ou conta de gestor/professor.</div>
 
+        <div class="graficos-grid">
+            <div class="secao">
+                <div class="secao-cabecalho">
+                    <h3 class="secao-titulo" style="--accent: var(--pink)">Alertas por Escola</h3>
+                </div>
+                <p class="secao-calc">Cálculo: quantos alunos daquela escola estão em alerta (nunca acessaram ou sem acesso há mais de 10 dias)</p>
+                <canvas id="cAlertasEscola"></canvas>
+                <div class="empty-state chart-empty" id="empty-cAlertasEscola" hidden>
+                    Nenhum aluno em alerta para esse filtro.
+                </div>
+                <div class="caixa caixa-atencao" id="insight-alertas-escola" hidden></div>
+            </div>
+            <div class="secao">
+                <div class="secao-cabecalho">
+                    <h3 class="secao-titulo" style="--accent: var(--purple)">Nunca Acessaram x Inativos</h3>
+                </div>
+                <p class="secao-calc">Cálculo: nunca acessou (sem nenhum login registrado) x sem acesso há mais de 10 dias (já acessou antes)</p>
+                <canvas id="cAlertasMotivo"></canvas>
+                <div class="empty-state chart-empty" id="empty-cAlertasMotivo" hidden>
+                    Nenhum aluno em alerta para esse filtro.
+                </div>
+            </div>
+        </div>
+
+        <div class="secao">
+            <div class="secao-cabecalho">
+                <h3 class="secao-titulo" style="--accent: var(--orange)">Resumo por Escola</h3>
+            </div>
+            <div class="table-wrap">
+                <table id="tabela-alertas-escola">
+                    <thead>
+                        <tr><th>Escola</th><th>Inscritos</th><th>Em Alerta</th><th>% em Alerta</th><th>Nunca Acessou</th><th>Sem Acesso &gt; 10 dias</th></tr>
+                    </thead>
+                    <tbody><tr><td colspan="6"><div class="carregando">Carregando...</div></td></tr></tbody>
+                </table>
+            </div>
+        </div>
+
         <div class="secao">
             <div class="secao-cabecalho">
                 <h3 class="secao-titulo" style="--accent: var(--pink)">Alunos sem acesso recente</h3>
@@ -394,9 +432,9 @@
             <div class="table-wrap">
                 <table id="tabela-alertas">
                     <thead>
-                        <tr><th>Aluno</th><th>Turma</th><th>Instituição</th><th>Situação</th></tr>
+                        <tr><th>Aluno</th><th>Escola</th><th>Turma</th><th>Instituição</th><th>Situação</th></tr>
                     </thead>
-                    <tbody><tr><td colspan="4"><div class="carregando">Carregando alertas...</div></td></tr></tbody>
+                    <tbody><tr><td colspan="5"><div class="carregando">Carregando alertas...</div></td></tr></tbody>
                 </table>
             </div>
         </div>

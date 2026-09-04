@@ -214,7 +214,101 @@ function renderizarTabelaTurmas(turmas) {
 }
 
 // --- Sistema de Alertas ---
-async function carregarAlertas(instituicaoId) {
+let chartAlertasEscola = null;
+let chartAlertasMotivo = null;
+
+// escolasInfo vem da mesma resposta de /dashboard já carregada (tem o
+// total de inscritos por escola) — usado só pra calcular o % em alerta
+// de cada escola, casando pelo nome (mesma função get_school_display_name
+// dos dois lados, então o nome sempre bate).
+function renderizarResumoAlertasPorEscola(porEscola, escolasInfo) {
+    const inscritosPorEscola = {};
+    (escolasInfo || []).forEach(e => { inscritosPorEscola[e.nome] = e.inscritos; });
+
+    const escolasOrdenadas = Object.entries(porEscola)
+        .sort((a, b) => b[1].total_em_alerta - a[1].total_em_alerta);
+
+    alternarEstadoVazio('cAlertasEscola', escolasOrdenadas.length > 0);
+    if (chartAlertasEscola) { chartAlertasEscola.destroy(); chartAlertasEscola = null; }
+
+    const elInsight = document.getElementById('insight-alertas-escola');
+    const tbody = document.querySelector('#tabela-alertas-escola tbody');
+
+    if (!escolasOrdenadas.length) {
+        if (elInsight) elInsight.hidden = true;
+        tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state">Nenhum aluno em alerta para esse filtro — tudo em dia.</div></td></tr>`;
+        return;
+    }
+
+    chartAlertasEscola = new Chart(document.getElementById('cAlertasEscola'), {
+        type: 'bar',
+        data: {
+            labels: escolasOrdenadas.map(([nome]) => nome),
+            datasets: [{
+                data: escolasOrdenadas.map(([, r]) => r.total_em_alerta),
+                backgroundColor: PINK,
+                borderRadius: 8,
+                maxBarThickness: 34,
+            }]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: { x: { grid: { display: false } }, y: { grid: { color: '#E4E6F0' }, beginAtZero: true } }
+        }
+    });
+
+    // Insight dinâmico: a escola com mais alunos em alerta, com o
+    // motivo por extenso — nunca inventa número, só descreve o pior caso.
+    const [piorNome, piorResumo] = escolasOrdenadas[0];
+    const totalDaEscola = inscritosPorEscola[piorNome];
+    const trechoTotal = totalDaEscola ? ` de ${fmtInt(totalDaEscola)} inscritos` : '';
+    if (elInsight) {
+        elInsight.innerHTML = `<strong>${piorNome}</strong> é a escola com mais alertas: ${fmtInt(piorResumo.total_em_alerta)}${trechoTotal} alunos nunca acessaram ou estão sem acesso há mais de 10 dias.`;
+        elInsight.hidden = false;
+    }
+
+    tbody.innerHTML = '';
+    escolasOrdenadas.forEach(([nome, r]) => {
+        const total = inscritosPorEscola[nome];
+        const pct = total ? (100 * r.total_em_alerta / total) : null;
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td style="font-weight:700;color:${NAVY};">${nome}</td>
+            <td class="num">${total !== undefined ? fmtInt(total) : '—'}</td>
+            <td class="num">${fmtInt(r.total_em_alerta)}</td>
+            <td class="num">${pct !== null ? fmtPct(pct) : '—'}</td>
+            <td class="num">${fmtInt(r.nunca_acessou)}</td>
+            <td class="num">${fmtInt(r.inativo_recente)}</td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+function renderizarGraficoMotivoAlerta(totalNuncaAcessou, totalInativoRecente) {
+    const temDado = (totalNuncaAcessou + totalInativoRecente) > 0;
+    alternarEstadoVazio('cAlertasMotivo', temDado);
+    if (chartAlertasMotivo) { chartAlertasMotivo.destroy(); chartAlertasMotivo = null; }
+    if (!temDado) return;
+
+    chartAlertasMotivo = new Chart(document.getElementById('cAlertasMotivo'), {
+        type: 'doughnut',
+        data: {
+            labels: ['Nunca acessaram', 'Sem acesso há mais de 10 dias'],
+            datasets: [{
+                data: [totalNuncaAcessou, totalInativoRecente],
+                backgroundColor: [PURPLE, ORANGE],
+                borderWidth: 2, borderColor: '#FFFFFF',
+            }]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, padding: 14 } } }
+        }
+    });
+}
+
+async function carregarAlertas(instituicaoId, escolasInfo) {
     const tbody = document.querySelector('#tabela-alertas tbody');
     try {
         const res = await fetch(`${API_BASE}/alertas?instituicao=${instituicaoId}`);
@@ -223,8 +317,15 @@ async function carregarAlertas(instituicaoId) {
 
         setKpi('alertas-total', `${fmtInt(dados.total_em_alerta)} aluno(s) em alerta`);
 
+        const porEscola = dados.por_escola || {};
+        renderizarResumoAlertasPorEscola(porEscola, escolasInfo);
+
+        const totalNuncaAcessou = Object.values(porEscola).reduce((s, r) => s + r.nunca_acessou, 0);
+        const totalInativoRecente = Object.values(porEscola).reduce((s, r) => s + r.inativo_recente, 0);
+        renderizarGraficoMotivoAlerta(totalNuncaAcessou, totalInativoRecente);
+
         if (!dados.alertas.length) {
-            tbody.innerHTML = `<tr><td colspan="4"><div class="empty-state">Nenhum aluno em alerta para esse filtro — tudo em dia.</div></td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="5"><div class="empty-state">Nenhum aluno em alerta para esse filtro — tudo em dia.</div></td></tr>`;
             return;
         }
 
@@ -234,6 +335,7 @@ async function carregarAlertas(instituicaoId) {
             const rotuloInstituicao = a.instituicao === 'cvp' ? 'CVP' : 'Secretaria de Educação';
             tr.innerHTML = `
                 <td style="font-weight:600;">${a.nome}</td>
+                <td>${a.escola}</td>
                 <td>${a.turma}</td>
                 <td>${rotuloInstituicao}</td>
                 <td><span class="pill-status pill-alerta">${a.motivo_alerta}</span></td>
@@ -242,7 +344,7 @@ async function carregarAlertas(instituicaoId) {
         });
     } catch (err) {
         console.error('Falha ao carregar Sistema de Alertas:', err);
-        tbody.innerHTML = `<tr><td colspan="4"><div class="empty-state">Não foi possível carregar os alertas agora.</div></td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="5"><div class="empty-state">Não foi possível carregar os alertas agora.</div></td></tr>`;
     }
 }
 
@@ -284,7 +386,7 @@ async function carregarDashboard(instituicaoId, trilhaId) {
         const dados = await res.json();
 
         carregarUsuariosAtivos(instituicaoId);
-        carregarAlertas(instituicaoId);
+        carregarAlertas(instituicaoId, dados.escolas);
 
         setKpi('kpi-escolas', fmtInt(dados.kpis.escolas));
         setKpi('kpi-turmas', fmtInt((dados.turmas || []).length));

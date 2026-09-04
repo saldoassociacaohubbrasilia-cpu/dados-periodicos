@@ -10,7 +10,7 @@ from app.institutions import (
     normalize_institution, get_institution, SCHOOL_COORDINATES,
     get_school_display_name, is_excluded_group,
 )
-from app.ingestion.transform import calcular_alerta_aluno
+from app.ingestion.transform import calcular_alerta_aluno, DIAS_LIMITE_INATIVIDADE
 
 router = APIRouter(prefix="/api/v1", tags=["dashboard"])
 
@@ -277,17 +277,41 @@ def get_alertas(instituicao: str = "todas", db: Session = Depends(get_db)):
         if inst_filtro != "todas" and inst_aluno != inst_filtro:
             continue
 
+        escola_aluno = get_school_display_name(nome_turma)
+
         alertas.append({
             "nome": aluno.name or aluno.login,
             "login": aluno.login,
             "turma": nome_turma,
+            "escola": escola_aluno,
             "instituicao": inst_aluno,
             "dias_sem_acesso": dias_sem_acesso,
             "motivo_alerta": motivo,
         })
 
     alertas.sort(key=lambda a: (a["dias_sem_acesso"] is None, a["dias_sem_acesso"] or 0), reverse=True)
-    return {"total_em_alerta": len(alertas), "alertas": alertas}
+
+    # Agregado por escola — "essa escola está em alerta porque X de Y
+    # alunos estão sem acesso" precisa de nunca_acessou/inativo_recente
+    # separados (nunca_acessou não tem "dias_sem_acesso" pra comparar
+    # com o limite, então não dá pra derivar um do outro).
+    por_escola: dict[str, dict] = {}
+    for a in alertas:
+        resumo = por_escola.setdefault(
+            a["escola"], {"total_em_alerta": 0, "nunca_acessou": 0, "inativo_recente": 0}
+        )
+        resumo["total_em_alerta"] += 1
+        if a["motivo_alerta"] == "Nunca acessou":
+            resumo["nunca_acessou"] += 1
+        else:
+            resumo["inativo_recente"] += 1
+
+    return {
+        "total_em_alerta": len(alertas),
+        "dias_limite_inatividade": DIAS_LIMITE_INATIVIDADE,
+        "alertas": alertas,
+        "por_escola": por_escola,
+    }
 
 
 @router.get("/usuarios-ativos-semana")
