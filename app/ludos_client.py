@@ -179,5 +179,31 @@ class LudosClient:
         Sistema de Alertas (dias sem acessar)."""
         return self._get_single(LOGIN_LOG_PATH)
 
+    def get_play_course(self, code: str, start_date: str, end_date: str) -> list:
+        """Jogadas de cada aluno em cada atividade de um curso específico
+        (moduleId, activityId, plays com completed/performance/datas) —
+        é o único jeito de saber em qual módulo um aluno está de verdade
+        (ver app/ingestion/transform.py:_modulo_mais_avancado); /report/
+        performance só dá o progresso da trilha inteira, sem módulo.
+
+        `code` é o externalCode do curso (ver /report/courses). `start_date`
+        e `end_date` são obrigatórios pela Ludos, formato YYYY-MM-DD.
+        Não usa _get_single: esse endpoint exige parâmetros, os outros
+        endpoints "bulk" não aceitam nenhum.
+        """
+        try:
+            data = self._get(
+                "/report/play/course",
+                params={"code": code, "startDate": start_date, "endDate": end_date},
+            )
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 403:
+                logger.warning("Cota excedida na API (403) em /report/play/course (code=%s).", code)
+                return []
+            raise LudosAPIError(
+                f"{exc.response.status_code} em /report/play/course: {exc.response.text[:300]}"
+            ) from exc
+        return data if isinstance(data, list) else (data.get("data", []) if isinstance(data, dict) else [])
+
     def close(self):
         self._client.close()

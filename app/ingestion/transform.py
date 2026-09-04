@@ -43,45 +43,70 @@ def _field(record: dict, *candidates, default=None):
     return default
 
 
-def _build_module_thresholds(courses_payload: list) -> dict[str, list[tuple[int, str]]]:
-    """A partir de /report/courses, monta pra cada courseId a lista de
-    módulos na mesma ordem que a Ludos devolve, cada um com o total
-    ACUMULADO de atividades até ali (limite, nome). Usado por
-    _estimar_modulo_atual pra achar em qual módulo um aluno está a partir
-    do activitiesPlayed dele — /report/performance não manda progresso
-    por módulo, só o total de atividades jogadas no curso inteiro."""
-    thresholds: dict[str, list[tuple[int, str]]] = {}
+def _build_module_positions(courses_payload: list) -> dict[str, dict[int, tuple[int, str]]]:
+    """A partir de /report/courses, monta pra cada courseId um mapa
+    {moduleId: (posicao, nome)} na mesma ordem que a Ludos lista os
+    módulos — é a posição (1, 2, 3...) que aparece no painel deles em
+    "Meus cursos > Conteúdo", não o moduleId cru (que pula números).
+    Usado por _modulo_mais_avancado pra nomear o módulo mais avançado que
+    cada aluno já completou, a partir do moduleId cru de /report/play/course."""
+    positions: dict[str, dict[int, tuple[int, str]]] = {}
     for course in courses_payload or []:
         course_id = str(_field(course, "courseId", default=""))
         if not course_id:
             continue
-        cumulative = 0
-        modulos = []
-        # Numera pela posição na trilha (1, 2, 3...), não pelo moduleId cru
-        # da Ludos (que pula números) — é o número que aparece no painel
-        # deles em "Meus cursos > Conteúdo", então bate com o que a
-        # Secretaria já reconhece como "módulo 1", "módulo 2" etc.
+        modulo_map: dict[int, tuple[int, str]] = {}
         for posicao, modulo in enumerate(course.get("modules") or [], start=1):
-            n_atividades = len(modulo.get("activities") or []) or 1
-            cumulative += n_atividades
-            nome_base = modulo.get("moduleName") or f"Módulo {modulo.get('moduleId')}"
-            modulos.append((cumulative, f"{posicao}. {nome_base}"))
-        thresholds[course_id] = modulos
-    return thresholds
+            module_id = modulo.get("moduleId")
+            if module_id is None:
+                continue
+            nome = modulo.get("moduleName") or f"Módulo {module_id}"
+            modulo_map[module_id] = (posicao, f"{posicao}. {nome}")
+        positions[course_id] = modulo_map
+    return positions
 
 
-def _estimar_modulo_atual(activities_played: int, thresholds: list[tuple[int, str]]) -> str:
-    """Estimativa: assume que os alunos fazem os módulos na mesma ordem
-    que a Ludos lista em /report/courses, e acha o primeiro módulo cujo
-    total acumulado de atividades ainda não foi ultrapassado pelo
-    activitiesPlayed do aluno. Sem estrutura de módulos pra esse curso
-    (ex: /report/courses ainda não sincronizado), cai no fallback antigo."""
-    if not thresholds:
-        return "Módulo Geral"
-    for limite, nome in thresholds:
-        if activities_played <= limite:
-            return nome
-    return thresholds[-1][1]
+def _build_module_by_student(play_course_payload: list, modulo_map: dict[int, tuple[int, str]]) -> dict[str, str]:
+    """A partir de /report/play/course (jogadas reais por aluno/módulo/
+    atividade) e do mapa de posição de módulo (_build_module_positions),
+    devolve {external_id: nome_do_modulo_mais_avancado} — dado real, não
+    mais estimativa por contagem de atividades (essa não é confiável: o
+    total que a Ludos usa pra calcular "progression" varia por aluno/hora,
+    não é fixo por curso, ver histórico de commits).
+
+    "Mais avançado" = maior posição entre os módulos com pelo menos uma
+    atividade CONCLUÍDA (completed=true em algum play). Sem nenhuma
+    atividade concluída ainda, cai pro módulo de MENOR posição onde o
+    aluno tem qualquer jogada (está tentando esse, ainda não passou)."""
+    resultado: dict[str, str] = {}
+    for player in play_course_payload or []:
+        external_id = str(_field(player, "playerId", "player_id", default=""))
+        if not external_id:
+            continue
+
+        melhor_completo: tuple[int, str] | None = None
+        pior_em_andamento: tuple[int, str] | None = None
+        for modulo in player.get("modules") or []:
+            info = modulo_map.get(modulo.get("moduleId"))
+            if info is None:
+                continue
+            posicao, nome = info
+            atividades = modulo.get("activities") or []
+            tem_jogada = any(atividades)
+            tem_completa = any(
+                play.get("completed")
+                for atividade in atividades
+                for play in (atividade.get("plays") or [])
+            )
+            if tem_completa and (melhor_completo is None or posicao > melhor_completo[0]):
+                melhor_completo = (posicao, nome)
+            if tem_jogada and (pior_em_andamento is None or posicao < pior_em_andamento[0]):
+                pior_em_andamento = (posicao, nome)
+
+        escolhido = melhor_completo or pior_em_andamento
+        if escolhido:
+            resultado[external_id] = escolhido[1]
+    return resultado
 
 
 def _upsert_students(db: Session, players: list, school_turma_cache: dict) -> tuple[dict[str, Student], dict[str, dict]]:
@@ -253,7 +278,7 @@ def _upsert_progress(
 def _process_trilha(
     db: Session, performance: list, trilha_id: str, trilha_nome: str,
     player_extra: dict, students_by_id: dict, school_turma_cache: dict,
-    module_thresholds: list[tuple[int, str]],
+    module_by_student: dict[str, str],
 ) -> None:
     """Processa uma trilha (CourseId) inteira: filtra o /report/performance
     pra esse curso, calcula os rollups (geral, módulo, escola/turma) e
@@ -344,8 +369,11 @@ def _process_trilha(
         inst = get_institution(group_name)
 
         progress = float(_field(perf, "progression", "progress", "progress_pct", "Complete", default=0) or 0)
-        activities_played = int(_field(perf, "activitiesPlayed", "activities_played", default=0) or 0)
-        module_name = _estimar_modulo_atual(activities_played, module_thresholds)
+        # Dado real de /report/play/course (ver rebuild_metrics) — None
+        # quando ainda não sincronizamos jogada nenhuma pra esse aluno
+        # nesse curso; nesse caso ele não entra na distribuição por módulo
+        # (mas continua contando em inscritos/engajados normalmente).
+        module_name = module_by_student.get(external_id)
         pontuacao = extra.get("pontuacao")
         status = "concluido" if progress >= 100 else ("engajado" if progress > 0 else "inscrito")
 
@@ -363,7 +391,8 @@ def _process_trilha(
             inscritos_ids[scope].add(external_id)
             if progress > 0:
                 engaged_ids[scope].add(external_id)
-                module_counts[scope][module_name] += 1
+                if module_name:
+                    module_counts[scope][module_name] += 1
             if progress >= 100:
                 completed_ids[scope].add(external_id)
 
@@ -550,16 +579,23 @@ def rebuild_metrics(db: Session) -> None:
     também por instituição), usados no dashboard, com trilha_id marcado
     em cada linha pra não misturar números de trilhas diferentes.
 
-    A distribuição por módulo é uma ESTIMATIVA: /report/performance não
-    diz em qual módulo o aluno está, só o total de atividades jogadas no
-    curso inteiro — _build_module_thresholds usa a estrutura real de
-    módulos de /report/courses pra inferir isso (ver _estimar_modulo_atual).
+    A distribuição por módulo vem de /report/play/course (jogadas reais
+    por aluno/módulo/atividade, sincronizado por trilha em
+    sync_job.py:_sync_play_course) — /report/performance não tem módulo,
+    só o progresso da trilha inteira. Ver _build_module_by_student.
     """
     players = _latest_payload(db, "/report/players") or []
     performance = _latest_payload(db, "/report/performance") or []
     login_log = _latest_payload(db, "/report/logs") or []
     courses = _latest_payload(db, "/report/courses") or []
-    module_thresholds_por_trilha = _build_module_thresholds(courses)
+    module_positions_por_trilha = _build_module_positions(courses)
+    module_por_aluno_por_trilha = {
+        trilha_id: _build_module_by_student(
+            _latest_payload(db, f"/report/play/course/{trilha_id}") or [],
+            module_positions_por_trilha.get(trilha_id, {}),
+        )
+        for trilha_id in TRILHAS
+    }
 
     # Um cache só, criado antes e reaproveitado tanto pra vincular turma
     # de cada aluno (mesmo que ele nunca apareça em performance) quanto
@@ -595,7 +631,7 @@ def rebuild_metrics(db: Session) -> None:
         _process_trilha(
             db, performance, trilha_id, trilha_nome,
             player_extra, students_by_id, school_turma_cache,
-            module_thresholds_por_trilha.get(trilha_id, []),
+            module_por_aluno_por_trilha.get(trilha_id, {}),
         )
 
     _limpar_snapshots_antigos(db)

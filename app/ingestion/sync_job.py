@@ -7,7 +7,12 @@ from sqlalchemy.orm import Session
 from app.database import SessionLocal, engine
 from app.models import RawLudosSnapshot, SyncLog
 from app.ludos_client import LudosClient, LudosAPIError
-from app.ingestion.transform import rebuild_metrics
+from app.ingestion.transform import rebuild_metrics, TRILHAS
+
+# Data mais antiga considerada ao buscar /report/play/course (a Ludos exige
+# um período, não devolve "tudo" sem filtro de data) — bem anterior ao
+# início de qualquer trilha hoje, só pra não deixar nada de fora.
+PLAY_COURSE_START_DATE = "2020-01-01"
 
 logger = logging.getLogger("sync_job")
 
@@ -74,6 +79,7 @@ def _run_sync_locked() -> None:
     db: Session = SessionLocal()
     client = LudosClient()
     try:
+        courses_payload: list = []
         for endpoint, fetch_fn in ENDPOINTS.items():
             started = dt.datetime.now(dt.timezone.utc)
             log = SyncLog(endpoint=endpoint, started_at=started, status="em_andamento")
@@ -85,6 +91,8 @@ def _run_sync_locked() -> None:
                 db.add(RawLudosSnapshot(endpoint=endpoint, params={}, payload=payload))
                 log.status = "sucesso"
                 log.records_ingested = len(payload) if isinstance(payload, list) else 1
+                if endpoint == "/report/courses":
+                    courses_payload = payload
             except LudosAPIError as exc:
                 logger.error("Erro sincronizando %s: %s", endpoint, exc)
                 log.status = "erro"
@@ -93,7 +101,59 @@ def _run_sync_locked() -> None:
                 log.finished_at = dt.datetime.now(dt.timezone.utc)
                 db.commit()
 
+        _sync_play_course(db, client, courses_payload)
+
         rebuild_metrics(db)
     finally:
         client.close()
         db.close()
+
+
+def _sync_play_course(db: Session, client: LudosClient, courses_payload: list) -> None:
+    """Busca /report/play/course pra cada trilha em TRILHAS — dado por
+    aluno/módulo/atividade, único jeito de saber em qual módulo cada aluno
+    está de verdade (ver transform.py:_modulo_mais_avancado). Endpoint
+    parametrizado por curso, então roda fora do laço genérico de ENDPOINTS
+    (que não passa parâmetro nenhum) — uma chamada por trilha, usando o
+    externalCode que acabou de vir em /report/courses nesta mesma rodada.
+    """
+    codigo_por_curso = {
+        str(c.get("courseId")): c.get("externalCode")
+        for c in (courses_payload or [])
+    }
+    # endDate parece ser um limite EXCLUSIVO (meia-noite) do lado da Ludos —
+    # usar a data de hoje cortava fora quem jogou hoje mesmo antes do sync
+    # rodar. +1 dia garante que o dia corrente inteiro sempre entra.
+    amanha = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=1)).strftime("%Y-%m-%d")
+
+    for trilha_id in TRILHAS:
+        code = codigo_por_curso.get(trilha_id)
+        endpoint_label = f"/report/play/course/{trilha_id}"
+        started = dt.datetime.now(dt.timezone.utc)
+        log = SyncLog(endpoint=endpoint_label, started_at=started, status="em_andamento")
+        db.add(log)
+        db.commit()
+
+        if not code:
+            log.status = "erro"
+            log.error_message = f"Sem externalCode pra trilha {trilha_id} em /report/courses"
+            log.finished_at = dt.datetime.now(dt.timezone.utc)
+            db.commit()
+            continue
+
+        try:
+            payload = client.get_play_course(code, PLAY_COURSE_START_DATE, amanha)
+            db.add(RawLudosSnapshot(
+                endpoint=endpoint_label,
+                params={"code": code, "startDate": PLAY_COURSE_START_DATE, "endDate": amanha},
+                payload=payload,
+            ))
+            log.status = "sucesso"
+            log.records_ingested = len(payload) if isinstance(payload, list) else 1
+        except LudosAPIError as exc:
+            logger.error("Erro sincronizando %s: %s", endpoint_label, exc)
+            log.status = "erro"
+            log.error_message = str(exc)[:1000]
+        finally:
+            log.finished_at = dt.datetime.now(dt.timezone.utc)
+            db.commit()
