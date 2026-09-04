@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import MetricSnapshot, Student, School, Turma, StudentProgress
 from app.schemas import OverviewOut, TrailShareOut
-from app.institutions import normalize_institution, get_institution, SCHOOL_COORDINATES
+from app.institutions import normalize_institution, get_institution, SCHOOL_COORDINATES, get_school_display_name
 from app.ingestion.transform import calcular_alerta_aluno
 
 router = APIRouter(prefix="/api/v1", tags=["dashboard"])
@@ -79,6 +79,17 @@ def get_full_dashboard(instituicao: str = "todas", trilha: str = TRILHA_PADRAO, 
         .order_by(MetricSnapshot.engajados.desc())
     ).scalars().all()
 
+    turma_rows = db.execute(
+        select(MetricSnapshot)
+        .where(
+            MetricSnapshot.snapshot_date == latest_date,
+            MetricSnapshot.scope_type == "turma",
+            MetricSnapshot.institution == inst,
+            MetricSnapshot.trilha_id == trilha,
+        )
+        .order_by(MetricSnapshot.inscritos.desc())
+    ).scalars().all()
+
     kpis = {
         "escolas": len(escola_rows),
         "inscritos": kpi_row.inscritos if kpi_row else 0,
@@ -107,17 +118,15 @@ def get_full_dashboard(instituicao: str = "todas", trilha: str = TRILHA_PADRAO, 
         for r in modulo_rows
     ]
 
-    # A Ludos não distingue turma de escola no GroupName hoje — então a
-    # tabela de turmas reaproveita a mesma base de escola/turma.
     turmas = [
         {
             "nome": r.scope_label,
-            "escola": r.scope_label,
+            "escola": get_school_display_name(r.scope_label),
             "total_alunos": r.inscritos,
             "alunos_engajados": r.engajados,
             "progresso_medio": r.taxa_ativacao,
         }
-        for r in escola_rows
+        for r in turma_rows
     ]
 
     destaque = {

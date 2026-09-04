@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import Turma, Student, StudentProgress
 from app.ingestion.transform import calcular_alerta_aluno, TRILHAS
+from app.institutions import get_school_display_name
 
 router = APIRouter(prefix="/api/v1/turma", tags=["relatorio-turma"])
 
@@ -109,7 +110,7 @@ def _buscar_relatorio_turma(db: Session, nome: str, trilha: str = TRILHA_PADRAO)
 
     return {
         "turma": turma.name,
-        "escola": turma.school.name if turma.school else turma.name,
+        "escola": get_school_display_name(turma.name),
         "trilha": TRILHAS.get(trilha, trilha),
         "total_alunos": len(linhas),
         "engajados": sum(1 for l in linhas if l["progresso_pct"] > 0),

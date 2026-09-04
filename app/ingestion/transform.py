@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models import RawLudosSnapshot, Student, School, Turma, StudentProgress, MetricSnapshot
-from app.institutions import get_institution
+from app.institutions import get_institution, is_excluded_group, get_school_display_name
 
 logger = logging.getLogger("transform")
 
@@ -221,10 +221,23 @@ def _process_trilha(
     engaged_ids: dict[str, set] = defaultdict(set)
     completed_ids: dict[str, set] = defaultdict(set)
     module_counts: dict[str, Counter] = defaultdict(Counter)
-    group_stats: dict[str, dict] = defaultdict(lambda: {
-        "inscritos": set(), "engajados": set(), "concluintes": set(),
-        "pontuacao_total": 0.0, "pontuacao_n": 0,
-    })
+    # turma_stats: por GroupName exato (o que a Ludos manda) — vira a
+    # tabela de turmas do dashboard, uma linha por turma.
+    # escola_stats: turma_stats agrupado pelo nome real da escola via
+    # GROUPNAME_TO_SCHOOL (app/institutions.py) — vira o KPI "Total de
+    # Escolas", o mapa e o ranking. Sem entrada na tabela, cada turma
+    # continua sendo sua própria "escola" (mesmo valor nos dois dicts).
+    def _nova_stat():
+        return {"inscritos": set(), "engajados": set(), "concluintes": set(),
+                "pontuacao_total": 0.0, "pontuacao_n": 0}
+    turma_stats: dict[str, dict] = defaultdict(_nova_stat)
+    escola_stats: dict[str, dict] = defaultdict(_nova_stat)
+    # Uma escola real pode agregar turmas de instituições diferentes só se
+    # o cadastro em GROUPNAME_TO_INSTITUTION estiver inconsistente — rastreia
+    # de fato em qual(is) instituição(ões) cada escola apareceu, em vez de
+    # tentar recalcular get_institution() em cima do nome já agregado da
+    # escola (que não é um GroupName válido pra bater no mapeamento).
+    escola_institutions: dict[str, set] = defaultdict(set)
     # Garante que 'todas' sempre existe, mesmo com payload vazio — assim
     # o rollup geral sempre grava um snapshot fresco (ainda que zerado)
     # e o /overview nunca mostra um sync antigo como se fosse o mais recente.
@@ -246,10 +259,15 @@ def _process_trilha(
         ):
             continue
         group_name = str(extra.get("group_name") or "Sem Turma")
+        if is_excluded_group(group_name):
+            continue
         inst = get_institution(group_name)
         for scope in (inst, "todas"):
             inscritos_ids[scope].add(external_id)
-        group_stats[group_name]["inscritos"].add(external_id)
+        turma_stats[group_name]["inscritos"].add(external_id)
+        escola_nome = get_school_display_name(group_name)
+        escola_stats[escola_nome]["inscritos"].add(external_id)
+        escola_institutions[escola_nome].add(inst)
 
     for perf in performance:
         course_id = _field(perf, "courseId", "CourseId", "course_id", "id_curso")
@@ -275,6 +293,8 @@ def _process_trilha(
         # Ludos só manda isso no /report/players, casado pelo mesmo playerId.
         extra = player_extra.get(external_id, {})
         group_name = str(extra.get("group_name") or "Sem Turma")
+        if is_excluded_group(group_name):
+            continue
         inst = get_institution(group_name)
 
         progress = float(_field(perf, "progression", "progress", "progress_pct", "Complete", default=0) or 0)
@@ -300,15 +320,17 @@ def _process_trilha(
             if progress >= 100:
                 completed_ids[scope].add(external_id)
 
-        gs = group_stats[group_name]
-        gs["inscritos"].add(external_id)
-        if progress > 0:
-            gs["engajados"].add(external_id)
-        if progress >= 100:
-            gs["concluintes"].add(external_id)
-        if pontuacao is not None:
-            gs["pontuacao_total"] += float(pontuacao)
-            gs["pontuacao_n"] += 1
+        escola_nome = get_school_display_name(group_name)
+        escola_institutions[escola_nome].add(inst)
+        for gs in (turma_stats[group_name], escola_stats[escola_nome]):
+            gs["inscritos"].add(external_id)
+            if progress > 0:
+                gs["engajados"].add(external_id)
+            if progress >= 100:
+                gs["concluintes"].add(external_id)
+            if pontuacao is not None:
+                gs["pontuacao_total"] += float(pontuacao)
+                gs["pontuacao_n"] += 1
 
         # Vincula o aluno à escola/turma e grava o progresso individual dele
         school, turma = _get_or_create_school_turma(db, school_turma_cache, group_name)
@@ -363,8 +385,9 @@ def _process_trilha(
                 taxa_retencao=0.0,
             ))
 
-    # --- Rollup por escola/turma (instituição real da turma + 'todas') ---
-    for group_name, gs in group_stats.items():
+    # --- Rollup por turma (instituição real da turma + 'todas') — uma
+    # linha por GroupName exato, usada na tabela de turmas do dashboard. ---
+    for group_name, gs in turma_stats.items():
         inst = get_institution(group_name)
         n_inscritos = len(gs["inscritos"])
         n_engajados = len(gs["engajados"])
@@ -374,7 +397,7 @@ def _process_trilha(
         for scope in {inst, "todas"}:
             db.add(MetricSnapshot(
                 snapshot_date=now,
-                scope_type="escola",
+                scope_type="turma",
                 scope_id=group_name,
                 scope_label=group_name,
                 institution=scope,
@@ -388,12 +411,38 @@ def _process_trilha(
                 pontuacao_media=pontuacao_media,
             ))
 
+    # --- Rollup por escola real (turmas agregadas via GROUPNAME_TO_SCHOOL)
+    # — usada no KPI "Total de Escolas", mapa e ranking. ---
+    for escola_nome, gs in escola_stats.items():
+        n_inscritos = len(gs["inscritos"])
+        n_engajados = len(gs["engajados"])
+        n_concluintes = len(gs["concluintes"])
+        pontuacao_media = round(gs["pontuacao_total"] / gs["pontuacao_n"], 2) if gs["pontuacao_n"] else 0.0
+
+        for scope in escola_institutions[escola_nome] | {"todas"}:
+            db.add(MetricSnapshot(
+                snapshot_date=now,
+                scope_type="escola",
+                scope_id=escola_nome,
+                scope_label=escola_nome,
+                institution=scope,
+                trilha_id=trilha_id,
+                inscritos=n_inscritos,
+                engajados=n_engajados,
+                concluintes=n_concluintes,
+                taxa_ativacao=round(100 * n_engajados / n_inscritos, 2) if n_inscritos else 0.0,
+                taxa_conclusao=round(100 * n_concluintes / n_inscritos, 2) if n_inscritos else 0.0,
+                taxa_retencao=round(100 * n_concluintes / n_engajados, 2) if n_engajados else 0.0,
+                pontuacao_media=pontuacao_media,
+            ))
+
     logger.info(
-        "%s recalculada: %s inscritos únicos, %s engajados, %s escolas/turmas",
+        "%s recalculada: %s inscritos únicos, %s engajados, %s turmas, %s escolas",
         trilha_nome,
         len(inscritos_ids.get("todas", set())),
         len(engaged_ids.get("todas", set()) & inscritos_ids.get("todas", set())),
-        len(group_stats),
+        len(turma_stats),
+        len(escola_stats),
     )
 
 
