@@ -22,6 +22,14 @@ const fmtInt = (num) => new Intl.NumberFormat('pt-BR').format(num || 0);
 const fmtPct = (num) => (num || 0).toFixed(1) + '%';
 function setKpi(id, text) { const el = document.getElementById(id); if (el) el.textContent = text; }
 
+// O filtro superior é um único select combinando trilha + instituição
+// (ex: "41:secretaria" = Trilha Saldo+ SEEDF) — a Pocket não tem
+// separação por instituição hoje, só a Saldo+ precisa disso.
+function lerFiltroSelecionado() {
+    const [trilha, instituicao] = document.getElementById('filtro-select').value.split(':');
+    return { trilha, instituicao };
+}
+
 // --- Regiões e limites geográficos do mapa ---
 const REGIOES_MAPA = {
     brasil: { center: [-14.235, -51.9253], zoom: 4 },
@@ -421,7 +429,7 @@ function abrirModalTurma(nomeTurma) {
     document.querySelector('#tabela-alunos-turma tbody').innerHTML =
         '<tr><td colspan="4">Carregando alunos...</td></tr>';
 
-    const trilhaId = document.getElementById('trilha-select').value;
+    const { trilha: trilhaId } = lerFiltroSelecionado();
     const params = `nome=${encodeURIComponent(nomeTurma)}&trilha=${encodeURIComponent(trilhaId)}`;
     document.getElementById('modal-baixar-pdf').href = `${API_BASE}/turma/relatorio/pdf?${params}`;
     document.getElementById('modal-baixar-excel').href = `${API_BASE}/turma/relatorio/excel?${params}`;
@@ -497,16 +505,14 @@ function ativarAba(nomePagina) {
 
 // Event Listeners
 document.addEventListener('DOMContentLoaded', () => {
-    const selectFiltro = document.getElementById('instituicao-select');
-    const selectTrilha = document.getElementById('trilha-select');
+    const selectUnico = document.getElementById('filtro-select');
 
-    carregarDashboard(selectFiltro.value, selectTrilha.value);
+    const { trilha: trilhaInicial, instituicao: instituicaoInicial } = lerFiltroSelecionado();
+    carregarDashboard(instituicaoInicial, trilhaInicial);
 
-    selectFiltro.addEventListener('change', (e) => {
-        carregarDashboard(e.target.value, selectTrilha.value);
-    });
-    selectTrilha.addEventListener('change', (e) => {
-        carregarDashboard(selectFiltro.value, e.target.value);
+    selectUnico.addEventListener('change', () => {
+        const { trilha, instituicao } = lerFiltroSelecionado();
+        carregarDashboard(instituicao, trilha);
     });
 
     document.querySelectorAll('.aba-btn').forEach(btn => {
