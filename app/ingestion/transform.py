@@ -57,11 +57,15 @@ def _build_module_thresholds(courses_payload: list) -> dict[str, list[tuple[int,
             continue
         cumulative = 0
         modulos = []
-        for modulo in course.get("modules") or []:
+        # Numera pela posição na trilha (1, 2, 3...), não pelo moduleId cru
+        # da Ludos (que pula números) — é o número que aparece no painel
+        # deles em "Meus cursos > Conteúdo", então bate com o que a
+        # Secretaria já reconhece como "módulo 1", "módulo 2" etc.
+        for posicao, modulo in enumerate(course.get("modules") or [], start=1):
             n_atividades = len(modulo.get("activities") or []) or 1
             cumulative += n_atividades
-            nome = modulo.get("moduleName") or f"Módulo {modulo.get('moduleId')}"
-            modulos.append((cumulative, nome))
+            nome_base = modulo.get("moduleName") or f"Módulo {modulo.get('moduleId')}"
+            modulos.append((cumulative, f"{posicao}. {nome_base}"))
         thresholds[course_id] = modulos
     return thresholds
 
