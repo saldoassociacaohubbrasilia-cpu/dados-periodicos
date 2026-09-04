@@ -73,6 +73,7 @@ function focarRegiao(chave) {
 }
 
 function atualizarMapa(dadosEscolas, instituicaoId) {
+    if (!mapaGeografico) return; // inicializarMapa() falhou — resto do dashboard segue sem mapa
     marcadoresMapa.forEach(m => mapaGeografico.removeLayer(m));
     marcadoresMapa = [];
 
@@ -382,9 +383,16 @@ async function carregarUsuariosAtivos(instituicaoId) {
 
 // --- Função Principal: Buscar e Atualizar o Dashboard ---
 async function carregarDashboard(instituicaoId, trilhaId) {
+    // Isolado do try principal: se o Leaflet falhar por qualquer motivo
+    // (ex: instabilidade no CDN), isso não pode derrubar a atualização
+    // dos KPIs/tabelas/gráficos, que não dependem do mapa.
     try {
         inicializarMapa();
+    } catch (err) {
+        console.error('Falha ao inicializar o mapa:', err);
+    }
 
+    try {
         const res = await fetch(`${API_BASE}/dashboard?instituicao=${instituicaoId}&trilha=${trilhaId}`);
 
         if (!res.ok) {
