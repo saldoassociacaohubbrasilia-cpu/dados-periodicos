@@ -100,6 +100,21 @@ def _upsert_students(db: Session, players: list, school_turma_cache: dict) -> tu
         school, turma = _get_or_create_school_turma(db, school_turma_cache, group_name or "Sem Turma")
         student.school_id = school.id
         student.turma_id = turma.id
+        # Se este aluno tem um manager (gestor/professor), garanta que
+        # o gestor exista como Student(is_staff=True) e vincule-o à turma
+        # via a relação many-to-many `turma.managers`.
+        if manager_id:
+            mgr_ext = str(manager_id)
+            mgr = db.execute(select(Student).where(Student.external_id == mgr_ext)).scalar_one_or_none()
+            if mgr is None:
+                mgr = Student(external_id=mgr_ext, login=manager_login or "")
+                db.add(mgr)
+                db.flush()
+            mgr.is_staff = True
+            # opcionalmente, associe escola do gestor
+            mgr.school_id = school.id
+            if mgr not in turma.managers:
+                turma.managers.append(mgr)
     db.commit()
 
     if not external_ids:

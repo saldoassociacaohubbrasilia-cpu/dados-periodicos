@@ -126,6 +126,24 @@ def get_relatorio_turma(nome: str, trilha: str = TRILHA_PADRAO, db: Session = De
     return _buscar_relatorio_turma(db, nome, trilha)
 
 
+@router.get("/gestores")
+def get_gestores_turma(nome: str, db: Session = Depends(get_db)):
+    """Professores/coordenadores responsáveis por uma turma (Student com
+    is_staff=True, vinculados via a tabela turma_manager). Alimentado pelo
+    managerId/managerLogin que a Ludos manda em /report/players."""
+    turma = db.execute(select(Turma).where(Turma.name == nome)).scalar_one_or_none()
+    if turma is None:
+        raise HTTPException(status_code=404, detail=f"Turma '{nome}' não encontrada.")
+
+    return {
+        "turma": turma.name,
+        "gestores": [
+            {"nome": gestor.name or gestor.login, "login": gestor.login}
+            for gestor in turma.managers
+        ],
+    }
+
+
 @router.get("/relatorio/pdf")
 def get_relatorio_turma_pdf(nome: str, trilha: str = TRILHA_PADRAO, db: Session = Depends(get_db)):
     from reportlab.lib import colors

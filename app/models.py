@@ -4,8 +4,17 @@ from typing import Optional
 from sqlalchemy import String, Integer, Float, DateTime, ForeignKey, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import Table, Column
 
 from app.database import Base
+
+# Associação many-to-many entre turmas e gestores (students que são gestores)
+turma_manager = Table(
+    "turma_manager",
+    Base.metadata,
+    Column("turma_id", ForeignKey("turma.id"), primary_key=True),
+    Column("manager_id", ForeignKey("student.id"), primary_key=True),
+)
 
 
 # ======================================================================
@@ -65,6 +74,12 @@ class Turma(Base):
     school_id: Mapped[int] = mapped_column(ForeignKey("school.id"))
 
     school: Mapped["School"] = relationship(back_populates="turmas")
+    # gestores/teachers linked to this turma (many-to-many with Student)
+    managers: Mapped[list["Student"]] = relationship(
+        "Student",
+        secondary="turma_manager",
+        back_populates="managed_turmas",
+    )
 
 
 class Student(Base):
@@ -100,6 +115,12 @@ class Student(Base):
     is_staff: Mapped[bool] = mapped_column(default=False)
 
     progress_records: Mapped[list["StudentProgress"]] = relationship(back_populates="student")
+    # turmas que este gestor gerencia (many-to-many com Turma)
+    managed_turmas: Mapped[list["Turma"]] = relationship(
+        "Turma",
+        secondary="turma_manager",
+        back_populates="managers",
+    )
 
 
 class StudentProgress(Base):
