@@ -17,11 +17,25 @@ GROUPNAME_TO_INSTITUTION: dict[str, str] = {
     # "CVP - Turma Exemplo": "cvp",
 }
 
-# Preencha aqui as coordenadas de cada escola/turma (GroupName -> (lat, lng))
-# para elas aparecerem no mapa. Quem não estiver aqui simplesmente não
+# Coordenadas de cada ESCOLA REAL (a chave é o nome que sai de
+# get_school_display_name() em GROUPNAME_TO_SCHOOL abaixo, não o nome da
+# turma) — pra aparecerem no mapa. Quem não estiver aqui simplesmente não
 # aparece no mapa — mas continua aparecendo nos gráficos e na tabela.
+#
+# Buscadas por endereço público (CRE/SEEDF, QEdu) em 2026-09; a maioria
+# está no endereço exato da escola, mas duas ficaram aproximadas — ajuste
+# se tiver a coordenada exata:
+#   - "CED 17 CEI": a busca de geocoding devolveu um ponto muito longe de
+#     Ceilândia (~40km) — usei o centro conhecido do bairro Setor O.
+#   - "CEMI 310": não confirmei 100% que é o mesmo prédio do "CED 310 de
+#     Santa Maria" (só nome parecido + mesmo número de quadra "310").
 SCHOOL_COORDINATES: dict[str, tuple[float, float]] = {
-    # "CED Jardins": (-15.793, -47.882),
+    "CED 01 Itapoã": (-15.7483, -47.7592),       # DF-250 Km 2,5, Itapoã
+    "CEMAB": (-15.8368, -48.0528),                # QSA 03/05, Taguatinga Sul
+    "CEDLAN": (-15.7386, -47.8594),               # SHIN CA 02, Lago Norte
+    "CEMI 310": (-16.0122, -48.0142),             # Quadra CL 310, Santa Maria (aproximado)
+    "CED 17 CEI": (-15.8150, -48.1072),           # EQNO 1/3, Setor O, Ceilândia (aproximado)
+    "CED Incra 08": (-15.7404, -48.1704),         # Quadra 4 AE, Incra 8, Brazlândia
 }
 
 VALID_INSTITUTIONS = {"todas", "secretaria", "cvp"}
