@@ -293,6 +293,7 @@ def _upsert_progress(
     db: Session, student_id: int, trilha_id: str, trilha_nome: str,
     progress_pct: float, status: str,
     started_at: "dt.datetime | None" = None, completed_at: "dt.datetime | None" = None,
+    modulo_atual: str | None = None,
 ) -> None:
     row = db.execute(
         select(StudentProgress).where(
@@ -310,6 +311,7 @@ def _upsert_progress(
             progress_pct=progress_pct,
             status=status,
             started_at=started_at or now,
+            modulo_atual=modulo_atual,
         )
         if status == "concluido":
             row.completed_at = completed_at or now
@@ -317,6 +319,7 @@ def _upsert_progress(
     else:
         row.progress_pct = progress_pct
         row.status = status
+        row.modulo_atual = modulo_atual
         if started_at is not None:
             row.started_at = started_at
         if status == "concluido" and row.completed_at is None:
@@ -483,6 +486,7 @@ def _process_trilha(
             _upsert_progress(
                 db, student.id, trilha_id, trilha_nome, progress, status,
                 started_at=_parse_iso(started_raw), completed_at=_parse_iso(completed_raw),
+                modulo_atual=module_name,
             )
 
     now = dt.datetime.now(dt.timezone.utc)

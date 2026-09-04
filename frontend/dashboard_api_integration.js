@@ -480,7 +480,7 @@ function abrirModalTurma(nomeTurma) {
             if (!dados.alunos.length) {
                 tbody.innerHTML = `
                     <tr>
-                        <td colspan="7">
+                        <td colspan="6">
                             <div class="empty-state">Nenhum estudante encontrado nesta turma.</div>
                         </td>
                     </tr>`;
@@ -499,8 +499,7 @@ function abrirModalTurma(nomeTurma) {
                             <small class="num">${fmtPct(a.progresso_pct)}</small>
                         </div>
                     </td>
-                    <td class="num">${fmtInt(a.pontos)}</td>
-                    <td class="num">${fmtInt(a.moedas)}</td>
+                    <td>${a.modulo}</td>
                     <td>${a.status}</td>
                 `;
                 tbody.appendChild(tr);

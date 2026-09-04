@@ -87,6 +87,10 @@ def _buscar_relatorio_turma(db: Session, nome: str, trilha: str = TRILHA_PADRAO)
             "progresso_pct": round(progresso.progress_pct, 1) if progresso else 0.0,
             "pontos": aluno.pontos if aluno.pontos is not None else 0,
             "moedas": aluno.moedas if aluno.moedas is not None else 0,
+            # Módulo real (via /report/play/course, ver
+            # transform.py:_build_module_by_student) — None quando ainda
+            # não sincronizamos nenhuma jogada dele nessa trilha.
+            "modulo": (progresso.modulo_atual if progresso and progresso.modulo_atual else "—"),
             "status": STATUS_LABEL.get(status, status),
             "dias_sem_acesso": dias_sem_acesso,
             "alerta_inatividade": alerta,
@@ -169,39 +173,48 @@ def get_relatorio_turma_pdf(nome: str, trilha: str = TRILHA_PADRAO, db: Session 
         Paragraph(f"Gerado em {datetime.now(timezone.utc).strftime('%d/%m/%Y %H:%M')} (UTC)", subtitulo_style),
         Spacer(1, 14),
         Paragraph(
-            f"{dados['total_alunos']} alunos · {dados['engajados']} engajados · {dados['concluintes']} concluintes",
+            f"{dados['total_alunos']} estudantes · {dados['engajados']} engajados · {dados['concluintes']} concluintes",
             styles["Normal"],
         ),
         Spacer(1, 14),
     ]
 
-    # Nome, login e motivo do alerta viram Paragraph (não string crua) —
-    # login da Ludos costuma ser um token longo sem espaço nenhum (ex:
-    # "REG6CED01ITAPOAKADRIELLIMA"), e uma célula de Table com string
+    # Nome, login, módulo e motivo do alerta viram Paragraph (não string
+    # crua) — login da Ludos costuma ser um token longo sem espaço nenhum
+    # (ex: "REG6CED01ITAPOAKADRIELLIMA"), e uma célula de Table com string
     # crua não quebra linha nesse caso: o texto simplesmente vazava por
     # cima da coluna vizinha. Paragraph quebra até palavra sem espaço
     # (splitLongWords, ligado por padrão no ParagraphStyle do reportlab).
     corpo_style = ParagraphStyle("CorpoTabela", parent=styles["Normal"], fontSize=8, leading=9.5)
     login_style = ParagraphStyle("LoginTabela", parent=corpo_style, fontSize=7, leading=8)
+    # Cabeçalho também vira Paragraph — string crua não quebra linha, e
+    # "Concluído em" numa coluna estreita cortava a palavra no meio.
+    cabecalho_style = ParagraphStyle(
+        "CabecalhoTabela", parent=styles["Normal"], fontSize=8.5, leading=10,
+        textColor=colors.white, fontName="Helvetica-Bold",
+    )
 
-    linhas_tabela = [["#", "Aluno", "Login", "Progresso", "Pontos", "Moedas", "Status", "Alerta", "Concluído em"]]
+    # Pontos/moedas saíram da tabela (continuam calculados por baixo dos
+    # panos pra ordenar o ranking da turma, só não aparecem mais aqui) —
+    # no lugar, o módulo real em que o estudante está (mesmo dado de
+    # /report/play/course usado na distribuição por módulo do dashboard).
+    cabecalhos = ["#", "Estudante", "Login", "Progresso", "Módulo", "Status", "Alerta", "Concluído em"]
+    linhas_tabela = [[Paragraph(h, cabecalho_style) for h in cabecalhos]]
     for a in dados["alunos"]:
         linhas_tabela.append([
             str(a["posicao_na_turma"]),
             Paragraph(a["nome"], corpo_style),
             Paragraph(a["login"], login_style),
             f"{a['progresso_pct']:.1f}%",
-            f"{a['pontos']:.0f}",
-            f"{a['moedas']:.0f}",
+            Paragraph(a["modulo"], corpo_style),
             a["status"],
             Paragraph(a["motivo_alerta"] or "—", corpo_style),
             a["concluido_em"],
         ])
 
     # Soma das larguras precisa caber em 18cm (A4 = 21cm - 1.5cm de
-    # margem de cada lado) — a versão anterior somava 19.4cm e a tabela
-    # inteira vazava pra fora da página impressa.
-    tabela = Table(linhas_tabela, colWidths=[0.7 * cm, 3.0 * cm, 2.6 * cm, 1.7 * cm, 1.4 * cm, 1.4 * cm, 1.7 * cm, 3.0 * cm, 1.9 * cm], repeatRows=1)
+    # margem de cada lado).
+    tabela = Table(linhas_tabela, colWidths=[0.7 * cm, 2.9 * cm, 2.5 * cm, 1.6 * cm, 3.5 * cm, 1.6 * cm, 2.3 * cm, 2.3 * cm], repeatRows=1)
     tabela.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(NAVY)),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
@@ -247,12 +260,12 @@ def get_relatorio_turma_excel(nome: str, trilha: str = TRILHA_PADRAO, db: Sessio
 
     ws["A2"] = (
         f"Gerado em {datetime.now(timezone.utc).strftime('%d/%m/%Y %H:%M')} (UTC) — "
-        f"{dados['total_alunos']} alunos · {dados['engajados']} engajados · {dados['concluintes']} concluintes"
+        f"{dados['total_alunos']} estudantes · {dados['engajados']} engajados · {dados['concluintes']} concluintes"
     )
     ws["A2"].font = Font(name="Arial", size=9, italic=True, color="666666")
 
     header_row = 4
-    for col, texto in enumerate(["#", "Aluno", "Login", "Progresso", "Pontos", "Moedas", "Status", "Alerta", "Concluído em"], start=1):
+    for col, texto in enumerate(["#", "Estudante", "Login", "Progresso", "Módulo", "Status", "Alerta", "Concluído em"], start=1):
         celula = ws.cell(row=header_row, column=col, value=texto)
         celula.font = Font(name="Arial", bold=True, color="FFFFFF")
         celula.fill = PatternFill("solid", fgColor=NAVY.lstrip("#"))
@@ -265,14 +278,13 @@ def get_relatorio_turma_excel(nome: str, trilha: str = TRILHA_PADRAO, db: Sessio
         celula_pct = ws.cell(row=i, column=4, value=aluno["progresso_pct"] / 100)
         celula_pct.number_format = "0.0%"
         celula_pct.font = Font(name="Arial")
-        ws.cell(row=i, column=5, value=aluno["pontos"]).font = Font(name="Arial")
-        ws.cell(row=i, column=6, value=aluno["moedas"]).font = Font(name="Arial")
-        ws.cell(row=i, column=7, value=aluno["status"]).font = Font(name="Arial")
-        celula_alerta = ws.cell(row=i, column=8, value=aluno["motivo_alerta"] or "—")
+        ws.cell(row=i, column=5, value=aluno["modulo"]).font = Font(name="Arial")
+        ws.cell(row=i, column=6, value=aluno["status"]).font = Font(name="Arial")
+        celula_alerta = ws.cell(row=i, column=7, value=aluno["motivo_alerta"] or "—")
         celula_alerta.font = Font(name="Arial", color="DC2626" if aluno["alerta_inatividade"] else "000000")
-        ws.cell(row=i, column=9, value=aluno["concluido_em"]).font = Font(name="Arial")
+        ws.cell(row=i, column=8, value=aluno["concluido_em"]).font = Font(name="Arial")
 
-    for col, largura in zip("ABCDEFGHI", [5, 28, 20, 12, 10, 10, 14, 20, 16]):
+    for col, largura in zip("ABCDEFGH", [5, 28, 20, 12, 32, 14, 22, 16]):
         ws.column_dimensions[col].width = largura
 
     buffer = io.BytesIO()

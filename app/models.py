@@ -147,6 +147,12 @@ class StudentProgress(Base):
     status: Mapped[str] = mapped_column(String(40))  # campo cru da Ludos — não usar sozinho como engajamento
     started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Módulo mais avançado do aluno nessa trilha, já formatado ("1. Boas-
+    # vindas...") — mesmo dado real de /report/play/course usado na
+    # distribuição por módulo do dashboard (ver
+    # app/ingestion/transform.py:_build_module_by_student). Null quando
+    # ainda não sincronizamos nenhuma jogada dele nesse curso.
+    modulo_atual: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
