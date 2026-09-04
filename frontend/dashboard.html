@@ -132,6 +132,10 @@
 
         .graficos-grid { display: grid; grid-template-columns: 1.15fr 1fr; gap: 18px; margin-bottom: 20px; }
         @media (max-width: 820px) { .graficos-grid { grid-template-columns: 1fr; } }
+        /* Trilha Pocket não tem conceito de escola — o ranking por
+           escola some, e o gráfico de módulo (que sobra sozinho) ocupa
+           a linha inteira em vez de ficar espremido numa coluna só. */
+        .graficos-grid.modo-pocket { grid-template-columns: 1fr; }
         canvas { max-height: 280px; }
 
         /* ---------- Caixas de contexto ---------- */
@@ -252,7 +256,7 @@
     <section class="pagina ativa" id="pg-visao">
 
         <div class="kpi-grid">
-            <div class="kpi">
+            <div class="kpi" id="kpi-card-escolas">
                 <div class="kpi-topo"><span class="kpi-icone" style="background:var(--navy)"><svg class="icon" viewBox="0 0 24 24" stroke="#fff"><path d="M6 22V4a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v18"/><path d="M6 12h10"/><path d="M6 8h10"/><path d="M9 22v-4h2v4"/></svg></span></div>
                 <div class="kpi-rotulo">Escolas</div>
                 <div class="kpi-valor num" id="kpi-escolas">--</div>
@@ -264,12 +268,12 @@
             </div>
             <div class="kpi">
                 <div class="kpi-topo"><span class="kpi-icone" style="background:var(--purple)"><svg class="icon" viewBox="0 0 24 24" stroke="#fff"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span></div>
-                <div class="kpi-rotulo">Alunos Inscritos</div>
+                <div class="kpi-rotulo">Estudantes Inscritos</div>
                 <div class="kpi-valor num" id="kpi-inscritos">--</div>
             </div>
             <div class="kpi">
                 <div class="kpi-topo"><span class="kpi-icone" style="background:var(--orange)"><svg class="icon" viewBox="0 0 24 24" stroke="#fff"><path d="M13 2 3 14h7l-1 8 10-12h-7l1-8z"/></svg></span></div>
-                <div class="kpi-rotulo">Alunos Engajados</div>
+                <div class="kpi-rotulo">Estudantes Engajados</div>
                 <div class="kpi-valor num" id="kpi-engajados">--</div>
             </div>
             <div class="kpi">
@@ -310,12 +314,12 @@
             </div>
         </div>
 
-        <div class="graficos-grid">
-            <div class="secao">
+        <div class="graficos-grid" id="graficos-grid-visao">
+            <div class="secao" id="secao-ranking-escola">
                 <div class="secao-cabecalho">
                     <h3 class="secao-titulo" style="--accent: var(--teal)">Ranking de Engajamento por Escola</h3>
                 </div>
-                <p class="secao-calc">Cálculo: engajamento da escola = alunos engajados ÷ alunos inscritos naquela escola</p>
+                <p class="secao-calc">Cálculo: engajamento da escola = estudantes engajados ÷ estudantes inscritos naquela escola</p>
                 <canvas id="cEngajamentoEscola"></canvas>
                 <div class="empty-state chart-empty" id="empty-cEngajamentoEscola" hidden>
                     Nenhuma escola/turma com dado disponível para esse filtro ainda.
@@ -324,18 +328,18 @@
             </div>
             <div class="secao">
                 <div class="secao-cabecalho">
-                    <h3 class="secao-titulo" style="--accent: var(--pink)">Distribuição de Alunos por Módulo</h3>
+                    <h3 class="secao-titulo" style="--accent: var(--pink)">Distribuição de Estudantes por Módulo</h3>
                 </div>
-                <p class="secao-calc">Cálculo: módulo mais avançado de cada aluno, a partir das atividades concluídas (dado real, não estimado)</p>
+                <p class="secao-calc">Cálculo: módulo mais avançado de cada estudante, a partir das atividades concluídas (dado real, não estimado)</p>
                 <canvas id="cTrilhas"></canvas>
                 <div class="empty-state chart-empty" id="empty-cTrilhas" hidden>
                     Nenhum módulo com dado disponível para esse filtro ainda.
                 </div>
-                <div class="caixa caixa-verificado"><strong>✓ Dado real</strong> — vem de /report/play/course (jogada por aluno/módulo/atividade), não de estimativa.</div>
+                <div class="caixa caixa-verificado"><strong>✓ Dado real</strong> — vem de /report/play/course (jogada por estudante/módulo/atividade), não de estimativa.</div>
             </div>
         </div>
 
-        <div class="secao">
+        <div class="secao" id="secao-mapa">
             <div class="secao-cabecalho">
                 <h3 class="secao-titulo" style="--accent: var(--orange)">Distribuição Geográfica</h3>
                 <span class="secao-nota">Cor do marcador = faixa de engajamento</span>
@@ -364,8 +368,8 @@
                         <tr>
                             <th>Turma</th>
                             <th>Escola</th>
-                            <th>Total de Alunos</th>
-                            <th>Alunos Engajados</th>
+                            <th>Total de Estudantes</th>
+                            <th>Estudantes Engajados</th>
                             <th>Progresso Médio</th>
                             <th>Ação</th>
                         </tr>
@@ -378,17 +382,17 @@
 
     <!-- ==================== ABA 3 · SISTEMA DE ALERTAS ==================== -->
     <section class="pagina" id="pg-alertas">
-        <div class="caixa caixa-nota">Alunos sem acesso recente — nunca inclui aluno Bloqueado ou conta de gestor/professor.</div>
+        <div class="caixa caixa-nota">Estudantes sem acesso recente — nunca inclui estudante Bloqueado ou conta de gestor/professor.</div>
 
         <div class="graficos-grid">
             <div class="secao">
                 <div class="secao-cabecalho">
                     <h3 class="secao-titulo" style="--accent: var(--pink)">Alertas por Escola</h3>
                 </div>
-                <p class="secao-calc">Cálculo: quantos alunos daquela escola estão em alerta (nunca acessaram ou sem acesso há mais de 10 dias)</p>
+                <p class="secao-calc">Cálculo: quantos estudantes daquela escola estão em alerta (nunca acessaram ou sem acesso há mais de 10 dias)</p>
                 <canvas id="cAlertasEscola"></canvas>
                 <div class="empty-state chart-empty" id="empty-cAlertasEscola" hidden>
-                    Nenhum aluno em alerta para esse filtro.
+                    Nenhum estudante em alerta para esse filtro.
                 </div>
                 <div class="caixa caixa-atencao" id="insight-alertas-escola" hidden></div>
             </div>
@@ -399,7 +403,7 @@
                 <p class="secao-calc">Cálculo: nunca acessou (sem nenhum login registrado) x sem acesso há mais de 10 dias (já acessou antes)</p>
                 <canvas id="cAlertasMotivo"></canvas>
                 <div class="empty-state chart-empty" id="empty-cAlertasMotivo" hidden>
-                    Nenhum aluno em alerta para esse filtro.
+                    Nenhum estudante em alerta para esse filtro.
                 </div>
             </div>
         </div>
@@ -420,14 +424,14 @@
 
         <div class="secao">
             <div class="secao-cabecalho">
-                <h3 class="secao-titulo" style="--accent: var(--pink)">Alunos sem acesso recente</h3>
+                <h3 class="secao-titulo" style="--accent: var(--pink)">Estudantes sem acesso recente</h3>
                 <span class="secao-nota" id="alertas-total"></span>
             </div>
             <p class="secao-calc">Cálculo: em alerta = nunca acessou, ou passaram mais de 10 dias desde o último acesso</p>
             <div class="table-wrap">
                 <table id="tabela-alertas">
                     <thead>
-                        <tr><th>Aluno</th><th>Escola</th><th>Turma</th><th>Instituição</th><th>Situação</th></tr>
+                        <tr><th>Estudante</th><th>Escola</th><th>Turma</th><th>Instituição</th><th>Situação</th></tr>
                     </thead>
                     <tbody><tr><td colspan="5"><div class="carregando">Carregando alertas...</div></td></tr></tbody>
                 </table>
@@ -445,8 +449,8 @@
             <div class="formula-grid">
                 <div class="formula-card">
                     <div class="formula-nome">Inscritos</div>
-                    <div class="formula-expr">todo aluno ativo da turma</div>
-                    <div class="formula-desc">Alunos com conta ativa (não Bloqueado, não gestor/professor) vinculados a uma turma da trilha — mesmo quem ainda não começou a jogar.</div>
+                    <div class="formula-expr">todo estudante ativo da turma</div>
+                    <div class="formula-desc">Estudantes com conta ativa (não Bloqueado, não gestor/professor) vinculados a uma turma da trilha — mesmo quem ainda não começou a jogar.</div>
                 </div>
                 <div class="formula-card">
                     <div class="formula-nome">Engajados</div>
@@ -469,14 +473,14 @@
                     <div class="formula-desc">Usa o registro de acesso da Ludos — não é por trilha, é o último login na plataforma como um todo.</div>
                 </div>
                 <div class="formula-card">
-                    <div class="formula-nome">Módulo do aluno</div>
+                    <div class="formula-nome">Módulo do estudante</div>
                     <div class="formula-expr">maior módulo com atividade concluída</div>
                     <div class="formula-desc">Dado real de /report/play/course, não estimativa — cada jogada é registrada por módulo e atividade.</div>
                 </div>
                 <div class="formula-card">
                     <div class="formula-nome">Sistema de Alertas</div>
                     <div class="formula-expr">nunca acessou OU &gt; 10 dias sem acesso</div>
-                    <div class="formula-desc">Aluno Bloqueado ou conta de gestor nunca entra no alerta, mesmo sem acesso há muito tempo.</div>
+                    <div class="formula-desc">Estudante Bloqueado ou conta de gestor nunca entra no alerta, mesmo sem acesso há muito tempo.</div>
                 </div>
                 <div class="formula-card">
                     <div class="formula-nome">Escola (agregado)</div>
@@ -490,8 +494,8 @@
             <div class="secao-cabecalho">
                 <h3 class="secao-titulo" style="--accent: var(--orange)">O que ainda não está pronto</h3>
             </div>
-            <div class="caixa caixa-atencao"><strong>Trilha Pocket:</strong> só tem uma turma associada na Ludos, ainda sem alunos reais (só contas de teste) — por isso os indicadores da Pocket aparecem zerados hoje, de propósito.</div>
-            <div class="caixa caixa-atencao"><strong>CVP:</strong> ainda não tem aluno cadastrado — o filtro existe e já funciona, mas mostra tudo zerado até a CVP entrar de verdade.</div>
+            <div class="caixa caixa-atencao"><strong>Trilha Pocket:</strong> só tem uma turma associada na Ludos, ainda sem estudantes reais (só contas de teste) — por isso os indicadores da Pocket aparecem zerados hoje, de propósito.</div>
+            <div class="caixa caixa-atencao"><strong>CVP:</strong> ainda não tem estudante cadastrado — o filtro existe e já funciona, mas mostra tudo zerado até a CVP entrar de verdade.</div>
             <div class="caixa caixa-nota"><strong>Coordenadas do mapa:</strong> a maioria das escolas usa endereço oficial confirmado; duas (CED 17 CEI e CEMI 310) usam aproximação de bairro, pendente de confirmação com a Secretaria.</div>
         </div>
     </section>
@@ -520,7 +524,7 @@
             <div class="table-wrap modal-table-wrap">
                 <table id="tabela-alunos-turma">
                     <thead>
-                        <tr><th>#</th><th>Aluno</th><th>Login</th><th>Progresso</th><th>Pontos</th><th>Moedas</th><th>Status</th></tr>
+                        <tr><th>#</th><th>Estudante</th><th>Login</th><th>Progresso</th><th>Pontos</th><th>Moedas</th><th>Status</th></tr>
                     </thead>
                     <tbody><!-- Preenchido via JavaScript --></tbody>
                 </table>

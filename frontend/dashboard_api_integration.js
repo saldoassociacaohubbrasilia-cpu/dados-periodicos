@@ -122,11 +122,11 @@ function gerarInsightEscolas(escolas) {
 
     let texto;
     if (comEngajamento.length === 0) {
-        texto = `Nenhuma escola tem aluno engajado ainda neste filtro — os ${escolas.length} inscritos ainda não começaram a trilha.`;
+        texto = `Nenhuma escola tem estudante engajado ainda neste filtro — os ${escolas.length} inscritos ainda não começaram a trilha.`;
     } else if (comEngajamento.length === 1) {
-        texto = `<strong>${lider.nome}</strong> concentra todo o engajamento real até agora (${fmtPct(lider.engajamento_pct)}) — as outras ${escolas.length - 1} escolas têm alunos inscritos, mas nenhum começou a trilha.`;
+        texto = `<strong>${lider.nome}</strong> concentra todo o engajamento real até agora (${fmtPct(lider.engajamento_pct)}) — as outras ${escolas.length - 1} escolas têm estudantes inscritos, mas nenhum começou a trilha.`;
     } else {
-        texto = `<strong>${lider.nome}</strong> lidera com ${fmtPct(lider.engajamento_pct)} de engajamento, entre ${comEngajamento.length} de ${escolas.length} escolas já com algum aluno engajado.`;
+        texto = `<strong>${lider.nome}</strong> lidera com ${fmtPct(lider.engajamento_pct)} de engajamento, entre ${comEngajamento.length} de ${escolas.length} escolas já com algum estudante engajado.`;
     }
     el.innerHTML = texto;
     el.hidden = false;
@@ -216,7 +216,7 @@ function renderizarTabelaTurmas(turmas) {
                     <small class="num">${fmtPct(t.progresso_medio)}</small>
                 </div>
             </td>
-            <td><button class="btn-ver-alunos" data-turma="${t.nome}">Ver Alunos</button></td>
+            <td><button class="btn-ver-alunos" data-turma="${t.nome}">Ver Estudantes</button></td>
         `;
         tbody.appendChild(tr);
     });
@@ -245,7 +245,7 @@ function renderizarResumoAlertasPorEscola(porEscola, escolasInfo) {
 
     if (!escolasOrdenadas.length) {
         if (elInsight) elInsight.hidden = true;
-        tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state">Nenhum aluno em alerta para esse filtro — tudo em dia.</div></td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state">Nenhum estudante em alerta para esse filtro — tudo em dia.</div></td></tr>`;
         return;
     }
 
@@ -267,13 +267,13 @@ function renderizarResumoAlertasPorEscola(porEscola, escolasInfo) {
         }
     });
 
-    // Insight dinâmico: a escola com mais alunos em alerta, com o
+    // Insight dinâmico: a escola com mais estudantes em alerta, com o
     // motivo por extenso — nunca inventa número, só descreve o pior caso.
     const [piorNome, piorResumo] = escolasOrdenadas[0];
     const totalDaEscola = inscritosPorEscola[piorNome];
     const trechoTotal = totalDaEscola ? ` de ${fmtInt(totalDaEscola)} inscritos` : '';
     if (elInsight) {
-        elInsight.innerHTML = `<strong>${piorNome}</strong> é a escola com mais alertas: ${fmtInt(piorResumo.total_em_alerta)}${trechoTotal} alunos nunca acessaram ou estão sem acesso há mais de 10 dias.`;
+        elInsight.innerHTML = `<strong>${piorNome}</strong> é a escola com mais alertas: ${fmtInt(piorResumo.total_em_alerta)}${trechoTotal} estudantes nunca acessaram ou estão sem acesso há mais de 10 dias.`;
         elInsight.hidden = false;
     }
 
@@ -324,7 +324,7 @@ async function carregarAlertas(instituicaoId, escolasInfo) {
         if (!res.ok) throw new Error(`Erro na API: ${res.status}`);
         const dados = await res.json();
 
-        setKpi('alertas-total', `${fmtInt(dados.total_em_alerta)} aluno(s) em alerta`);
+        setKpi('alertas-total', `${fmtInt(dados.total_em_alerta)} estudante(s) em alerta`);
 
         const porEscola = dados.por_escola || {};
         renderizarResumoAlertasPorEscola(porEscola, escolasInfo);
@@ -334,7 +334,7 @@ async function carregarAlertas(instituicaoId, escolasInfo) {
         renderizarGraficoMotivoAlerta(totalNuncaAcessou, totalInativoRecente);
 
         if (!dados.alertas.length) {
-            tbody.innerHTML = `<tr><td colspan="5"><div class="empty-state">Nenhum aluno em alerta para esse filtro — tudo em dia.</div></td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="5"><div class="empty-state">Nenhum estudante em alerta para esse filtro — tudo em dia.</div></td></tr>`;
             return;
         }
 
@@ -381,8 +381,26 @@ async function carregarUsuariosAtivos(instituicaoId) {
     }
 }
 
+// A Trilha Pocket (id 43) não tem estrutura de escola na Ludos — só uma
+// turma de teste hoje. Ranking por escola e mapa não fazem sentido pra
+// ela; escondemos e deixamos a Visão Geral só com os indicadores gerais
+// e a distribuição por módulo.
+function aplicarModoTrilha(trilhaId) {
+    const ehPocket = trilhaId === '43';
+    const cardEscolas = document.getElementById('kpi-card-escolas');
+    const secaoRanking = document.getElementById('secao-ranking-escola');
+    const secaoMapa = document.getElementById('secao-mapa');
+    const grid = document.getElementById('graficos-grid-visao');
+    if (cardEscolas) cardEscolas.hidden = ehPocket;
+    if (secaoRanking) secaoRanking.hidden = ehPocket;
+    if (secaoMapa) secaoMapa.hidden = ehPocket;
+    if (grid) grid.classList.toggle('modo-pocket', ehPocket);
+}
+
 // --- Função Principal: Buscar e Atualizar o Dashboard ---
 async function carregarDashboard(instituicaoId, trilhaId) {
+    aplicarModoTrilha(trilhaId);
+
     // Isolado do try principal: se o Leaflet falhar por qualquer motivo
     // (ex: instabilidade no CDN), isso não pode derrubar a atualização
     // dos KPIs/tabelas/gráficos, que não dependem do mapa.
@@ -435,7 +453,7 @@ function abrirModalTurma(nomeTurma) {
     document.getElementById('modal-turma-escola').textContent = 'Carregando...';
     document.getElementById('modal-resumo').innerHTML = '';
     document.querySelector('#tabela-alunos-turma tbody').innerHTML =
-        '<tr><td colspan="4">Carregando alunos...</td></tr>';
+        '<tr><td colspan="4">Carregando estudantes...</td></tr>';
 
     const { trilha: trilhaId } = lerFiltroSelecionado();
     const params = `nome=${encodeURIComponent(nomeTurma)}&trilha=${encodeURIComponent(trilhaId)}`;
@@ -451,7 +469,7 @@ function abrirModalTurma(nomeTurma) {
             document.getElementById('modal-turma-escola').textContent =
                 dados.escola ? `${dados.escola} · ${dados.trilha}` : (dados.trilha || '—');
             document.getElementById('modal-resumo').innerHTML = `
-                <span><strong>${fmtInt(dados.total_alunos)}</strong>alunos</span>
+                <span><strong>${fmtInt(dados.total_alunos)}</strong>estudantes</span>
                 <span><strong>${fmtInt(dados.engajados)}</strong>engajados</span>
                 <span><strong>${fmtInt(dados.concluintes)}</strong>concluintes</span>
             `;
@@ -463,7 +481,7 @@ function abrirModalTurma(nomeTurma) {
                 tbody.innerHTML = `
                     <tr>
                         <td colspan="7">
-                            <div class="empty-state">Nenhum aluno encontrado nesta turma.</div>
+                            <div class="empty-state">Nenhum estudante encontrado nesta turma.</div>
                         </td>
                     </tr>`;
                 return;
