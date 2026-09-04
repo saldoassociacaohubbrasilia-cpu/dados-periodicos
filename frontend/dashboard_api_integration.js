@@ -203,6 +203,31 @@ function renderizarTabelaTurmas(turmas) {
     });
 }
 
+// Usuários ativos na última semana não é por trilha (last_access é o
+// último login na Ludos como um todo, não num curso específico) — busca
+// à parte, só reagindo ao filtro de instituição.
+async function carregarUsuariosAtivos(instituicaoId) {
+    try {
+        const res = await fetch(`${API_BASE}/usuarios-ativos-semana?instituicao=${instituicaoId}`);
+        if (!res.ok) throw new Error(`Erro na API: ${res.status}`);
+        const dados = await res.json();
+
+        setKpi('kpi-ativos-semana', fmtInt(dados.ativos_ultima_semana));
+
+        const elVariacao = document.getElementById('kpi-ativos-semana-variacao');
+        if (elVariacao) {
+            if (dados.variacao_pct === null || dados.variacao_pct === undefined) {
+                elVariacao.textContent = '';
+            } else {
+                const sinal = dados.variacao_pct >= 0 ? '+' : '';
+                elVariacao.textContent = `${sinal}${dados.variacao_pct}% vs. semana anterior`;
+            }
+        }
+    } catch (err) {
+        console.error('Falha ao carregar usuários ativos na última semana:', err);
+    }
+}
+
 // --- Função Principal: Buscar e Atualizar o Dashboard ---
 async function carregarDashboard(instituicaoId, trilhaId) {
     try {
@@ -217,6 +242,8 @@ async function carregarDashboard(instituicaoId, trilhaId) {
         }
 
         const dados = await res.json();
+
+        carregarUsuariosAtivos(instituicaoId);
 
         // Atualiza KPIs com os dados reais do banco
         setKpi('kpi-escolas', fmtInt(dados.kpis.escolas));
