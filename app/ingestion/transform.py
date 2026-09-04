@@ -177,14 +177,22 @@ def _upsert_students(db: Session, players: list, school_turma_cache: dict) -> tu
         external_ids.append(external_id)
 
         grupos = _field(p, "groups", default=[]) or []
-        group_name = str(grupos[0]["groupName"]).strip() if grupos and grupos[0].get("groupName") else None
+        primeiro_grupo = grupos[0] if grupos and grupos[0].get("groupName") else {}
+        group_name = str(primeiro_grupo["groupName"]).strip() if primeiro_grupo else None
+        group_id = primeiro_grupo.get("groupId")
+        integration_code = primeiro_grupo.get("integrationCode")
         pontuacao = _field(p, "coins", "score", "points", "Pontuacao", default=None)
-        extra_by_id[external_id] = {"group_name": group_name, "pontuacao": pontuacao}
+        extra_by_id[external_id] = {
+            "group_name": group_name, "pontuacao": pontuacao,
+            "group_id": group_id, "integration_code": integration_code,
+        }
 
         # Vincula escola/turma já aqui — mesmo que esse aluno nunca
         # apareça no /report/performance (ex: nunca jogou nada), ele
         # ainda fica com a turma certa, não "Sem Turma".
-        school, turma = _get_or_create_school_turma(db, school_turma_cache, group_name or "Sem Turma")
+        school, turma = _get_or_create_school_turma(
+            db, school_turma_cache, group_name or "Sem Turma", group_id, integration_code,
+        )
         student.school_id = school.id
         student.turma_id = turma.id
         # Se este aluno tem um manager (gestor/professor), garanta que
@@ -212,10 +220,21 @@ def _upsert_students(db: Session, players: list, school_turma_cache: dict) -> tu
     return {s.external_id: s for s in rows}, extra_by_id
 
 
-def _get_or_create_school_turma(db: Session, cache: dict, group_name: str) -> tuple[School, Turma]:
+def _get_or_create_school_turma(
+    db: Session, cache: dict, group_name: str,
+    group_id: int | None = None, integration_code: str | None = None,
+) -> tuple[School, Turma]:
     """A Ludos usa GroupName pra representar escola e turma ao mesmo tempo —
     então criamos/reaproveitamos uma School e uma Turma com esse nome.
-    `cache` evita reconsultar o banco pra cada registro do mesmo GroupName."""
+    `cache` evita reconsultar o banco pra cada registro do mesmo GroupName.
+
+    Quando `group_id` vem preenchido (de /report/players[].groups[] ou
+    /report/courses[].groups[]), grava também o ludos_group_id e o
+    integration_code na Turma — identidade estável por ID, não só pelo
+    nome (que quebraria se a Ludos renomeasse a turma). A turma ainda é
+    ENCONTRADA pelo nome (compatibilidade com as turmas já existentes no
+    banco, criadas antes dessas colunas existirem), só o ID/código fica
+    registrado como identidade adicional."""
     if group_name in cache:
         return cache[group_name]
 
@@ -227,9 +246,17 @@ def _get_or_create_school_turma(db: Session, cache: dict, group_name: str) -> tu
 
     turma = db.execute(select(Turma).where(Turma.external_id == group_name)).scalar_one_or_none()
     if turma is None:
-        turma = Turma(external_id=group_name, name=group_name, school_id=school.id)
+        turma = Turma(
+            external_id=group_name, name=group_name, school_id=school.id,
+            ludos_group_id=group_id, integration_code=integration_code,
+        )
         db.add(turma)
         db.flush()
+    else:
+        if group_id is not None:
+            turma.ludos_group_id = group_id
+        if integration_code is not None:
+            turma.integration_code = integration_code
 
     cache[group_name] = (school, turma)
     return school, turma
@@ -445,7 +472,10 @@ def _process_trilha(
                 gs["pontuacao_n"] += 1
 
         # Vincula o aluno à escola/turma e grava o progresso individual dele
-        school, turma = _get_or_create_school_turma(db, school_turma_cache, group_name)
+        school, turma = _get_or_create_school_turma(
+            db, school_turma_cache, group_name,
+            extra.get("group_id"), extra.get("integration_code"),
+        )
         student = students_by_id.get(external_id)
         if student is not None:
             student.school_id = school.id

@@ -69,9 +69,17 @@ class Turma(Base):
     __tablename__ = "turma"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    # external_id continua sendo o GroupName (nome da turma na Ludos) —
+    # é a chave usada pra ACHAR a turma (compatibilidade com o que já
+    # existe no banco). ludos_group_id/integration_code abaixo são a
+    # identidade estável por ID: sobrevivem a um rename de turma na
+    # Ludos, o nome não. Nullable porque turmas criadas antes dessas
+    # colunas existirem só ganham o valor no próximo sync que as citar.
     external_id: Mapped[str] = mapped_column(String(60), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(120))
     school_id: Mapped[int] = mapped_column(ForeignKey("school.id"))
+    ludos_group_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    integration_code: Mapped[Optional[str]] = mapped_column(String(60), nullable=True)
 
     school: Mapped["School"] = relationship(back_populates="turmas")
     # gestores/teachers linked to this turma (many-to-many with Student)
