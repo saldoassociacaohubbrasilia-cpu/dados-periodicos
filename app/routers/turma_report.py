@@ -175,15 +175,33 @@ def get_relatorio_turma_pdf(nome: str, trilha: str = TRILHA_PADRAO, db: Session 
         Spacer(1, 14),
     ]
 
+    # Nome, login e motivo do alerta viram Paragraph (não string crua) —
+    # login da Ludos costuma ser um token longo sem espaço nenhum (ex:
+    # "REG6CED01ITAPOAKADRIELLIMA"), e uma célula de Table com string
+    # crua não quebra linha nesse caso: o texto simplesmente vazava por
+    # cima da coluna vizinha. Paragraph quebra até palavra sem espaço
+    # (splitLongWords, ligado por padrão no ParagraphStyle do reportlab).
+    corpo_style = ParagraphStyle("CorpoTabela", parent=styles["Normal"], fontSize=8, leading=9.5)
+    login_style = ParagraphStyle("LoginTabela", parent=corpo_style, fontSize=7, leading=8)
+
     linhas_tabela = [["#", "Aluno", "Login", "Progresso", "Pontos", "Moedas", "Status", "Alerta", "Concluído em"]]
     for a in dados["alunos"]:
         linhas_tabela.append([
-            str(a["posicao_na_turma"]), a["nome"], a["login"], f"{a['progresso_pct']:.1f}%",
-            f"{a['pontos']:.0f}", f"{a['moedas']:.0f}", a["status"],
-            a["motivo_alerta"] or "—", a["concluido_em"],
+            str(a["posicao_na_turma"]),
+            Paragraph(a["nome"], corpo_style),
+            Paragraph(a["login"], login_style),
+            f"{a['progresso_pct']:.1f}%",
+            f"{a['pontos']:.0f}",
+            f"{a['moedas']:.0f}",
+            a["status"],
+            Paragraph(a["motivo_alerta"] or "—", corpo_style),
+            a["concluido_em"],
         ])
 
-    tabela = Table(linhas_tabela, colWidths=[0.8 * cm, 3.6 * cm, 2.8 * cm, 1.9 * cm, 1.6 * cm, 1.6 * cm, 2 * cm, 3 * cm, 2.1 * cm], repeatRows=1)
+    # Soma das larguras precisa caber em 18cm (A4 = 21cm - 1.5cm de
+    # margem de cada lado) — a versão anterior somava 19.4cm e a tabela
+    # inteira vazava pra fora da página impressa.
+    tabela = Table(linhas_tabela, colWidths=[0.7 * cm, 3.0 * cm, 2.6 * cm, 1.7 * cm, 1.4 * cm, 1.4 * cm, 1.7 * cm, 3.0 * cm, 1.9 * cm], repeatRows=1)
     tabela.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(NAVY)),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
