@@ -303,9 +303,13 @@ def _process_trilha(
         for scope in (inst, "todas"):
             inscritos_ids[scope].add(external_id)
         turma_stats[group_name]["inscritos"].add(external_id)
-        escola_nome = get_school_display_name(group_name)
-        escola_stats[escola_nome]["inscritos"].add(external_id)
-        escola_institutions[escola_nome].add(inst)
+        # "Sem Turma" (aluno real, mas ainda sem turma cadastrada na Ludos)
+        # não é uma escola — não entra no KPI "Total de Escolas" nem no
+        # mapa/ranking. O aluno continua contando nos totais gerais acima.
+        if group_name != "Sem Turma":
+            escola_nome = get_school_display_name(group_name)
+            escola_stats[escola_nome]["inscritos"].add(external_id)
+            escola_institutions[escola_nome].add(inst)
 
     for perf in performance:
         course_id = _field(perf, "courseId", "CourseId", "course_id", "id_curso")
@@ -359,9 +363,12 @@ def _process_trilha(
             if progress >= 100:
                 completed_ids[scope].add(external_id)
 
-        escola_nome = get_school_display_name(group_name)
-        escola_institutions[escola_nome].add(inst)
-        for gs in (turma_stats[group_name], escola_stats[escola_nome]):
+        gs_alvo = [turma_stats[group_name]]
+        if group_name != "Sem Turma":
+            escola_nome = get_school_display_name(group_name)
+            escola_institutions[escola_nome].add(inst)
+            gs_alvo.append(escola_stats[escola_nome])
+        for gs in gs_alvo:
             gs["inscritos"].add(external_id)
             if progress > 0:
                 gs["engajados"].add(external_id)
