@@ -230,6 +230,27 @@ def _process_trilha(
     # e o /overview nunca mostra um sync antigo como se fosse o mais recente.
     inscritos_ids["todas"]
 
+    # --- Base de "inscritos": TODO aluno ativo do /report/players conta,
+    # mesmo que ainda não tenha tocado na trilha. A Ludos só cria uma linha
+    # em /report/performance quando o aluno JÁ iniciou o curso (progression
+    # > 0 sempre) — não existe ali um estado "atribuído com 0% de progresso".
+    # Sem esta base, "inscritos" ficava, na prática, igual a "engajados"
+    # (daí a taxa de engajamento aparecer sempre 100%), e turmas inteiras
+    # que ainda não começaram a trilha sumiam do rollup por escola/turma.
+    # Como a Ludos não expõe em qual trilha cada aluno está matriculado,
+    # aplicamos a mesma base pra todas as trilhas em TRILHAS.
+    for external_id, extra in player_extra.items():
+        student_account = students_by_id.get(external_id)
+        if student_account is not None and (
+            student_account.account_status == "BLOCKED" or student_account.is_staff
+        ):
+            continue
+        group_name = str(extra.get("group_name") or "Sem Turma")
+        inst = get_institution(group_name)
+        for scope in (inst, "todas"):
+            inscritos_ids[scope].add(external_id)
+        group_stats[group_name]["inscritos"].add(external_id)
+
     for perf in performance:
         course_id = _field(perf, "courseId", "CourseId", "course_id", "id_curso")
         if course_id is not None and str(course_id) != trilha_id:
@@ -267,6 +288,11 @@ def _process_trilha(
         completed_raw = _field(perf, "endDate", "completed_at")
 
         for scope in (inst, "todas"):
+            # Já foi contado como inscrito no laço de player_extra acima —
+            # exceto quando este external_id só existe aqui por causa do
+            # fallback de "missing_ids" em rebuild_metrics (payload de
+            # /report/players cortado pela cota nesta rodada). O .add()
+            # é idempotente (é um set), então repetir não tem custo.
             inscritos_ids[scope].add(external_id)
             if progress > 0:
                 engaged_ids[scope].add(external_id)
