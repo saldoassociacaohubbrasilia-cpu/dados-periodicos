@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
@@ -6,7 +6,10 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import MetricSnapshot, Student, School, Turma, StudentProgress
 from app.schemas import OverviewOut, TrailShareOut
-from app.institutions import normalize_institution, get_institution, SCHOOL_COORDINATES, get_school_display_name
+from app.institutions import (
+    normalize_institution, get_institution, SCHOOL_COORDINATES,
+    get_school_display_name, is_excluded_group,
+)
 from app.ingestion.transform import calcular_alerta_aluno
 
 router = APIRouter(prefix="/api/v1", tags=["dashboard"])
@@ -285,6 +288,58 @@ def get_alertas(instituicao: str = "todas", db: Session = Depends(get_db)):
 
     alertas.sort(key=lambda a: (a["dias_sem_acesso"] is None, a["dias_sem_acesso"] or 0), reverse=True)
     return {"total_em_alerta": len(alertas), "alertas": alertas}
+
+
+@router.get("/usuarios-ativos-semana")
+def get_usuarios_ativos_semana(instituicao: str = "todas", db: Session = Depends(get_db)):
+    """
+    Quantos alunos acessaram a plataforma nos últimos 7 dias, a partir de
+    Student.last_access (vem do log de login /report/logs — ver
+    app/ludos_client.py:LOGIN_LOG_PATH). Não é por trilha: last_access é
+    o último login na Ludos como um todo, não em um curso específico.
+
+    Também devolve os 7 dias anteriores a esses, pra dar uma noção de
+    tendência (variação %) sem precisar guardar histórico à parte.
+    """
+    inst_filtro = normalize_institution(instituicao)
+    agora = datetime.now(timezone.utc)
+    limite_semana_atual = agora - timedelta(days=7)
+    limite_semana_anterior = agora - timedelta(days=14)
+
+    # Mesmo filtro de "aluno de verdade" do resto do dashboard: nunca
+    # Bloqueado, nunca staff/gestor — e nunca um grupo de teste/piloto
+    # (Trilha Pocket, Equipe Gestão) que ainda não é da Secretaria/CVP.
+    rows = db.execute(
+        select(Student.last_access, Turma.name)
+        .outerjoin(Turma, Turma.id == Student.turma_id)
+        .where(Student.account_status != "BLOCKED", Student.is_staff.is_(False))
+    ).all()
+
+    ativos_semana_atual = 0
+    ativos_semana_anterior = 0
+    for last_access, turma_nome in rows:
+        if is_excluded_group(turma_nome):
+            continue
+        if inst_filtro != "todas" and get_institution(turma_nome) != inst_filtro:
+            continue
+        if last_access is None:
+            continue
+        if last_access >= limite_semana_atual:
+            ativos_semana_atual += 1
+        elif last_access >= limite_semana_anterior:
+            ativos_semana_anterior += 1
+
+    variacao_pct = None
+    if ativos_semana_anterior > 0:
+        variacao_pct = round(
+            100 * (ativos_semana_atual - ativos_semana_anterior) / ativos_semana_anterior, 1
+        )
+
+    return {
+        "ativos_ultima_semana": ativos_semana_atual,
+        "ativos_semana_anterior": ativos_semana_anterior,
+        "variacao_pct": variacao_pct,
+    }
 
 
 @router.post("/sync/run")
