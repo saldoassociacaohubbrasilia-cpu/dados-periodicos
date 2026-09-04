@@ -33,6 +33,7 @@ _SYNC_LOCK_KEY = 928374651
 # nome/escola/turma) em vez de zerar os KPIs principais.
 ENDPOINTS = {
     "/report/performance": lambda c: c.get_performance(),
+    "/report/courses": lambda c: c.get_courses(),
     "/report/trails": lambda c: c.get_trails(),
     "/report/trails-performance": lambda c: c.get_trails_performance(),
     "/report/logs": lambda c: c.get_login_log(),
