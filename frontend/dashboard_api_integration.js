@@ -47,9 +47,13 @@ function inicializarMapa() {
             maxBoundsViscosity: 1.0,
         });
 
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-            attribution: '© OpenStreetMap contributors © CARTO',
-            subdomains: 'abcd',
+        // CartoDB Positron (light_all) passou a exigir cadastro/API key
+        // pra servir os tiles — sem ela, o CDN deles devolve um tile com
+        // marca d'água "API KEY REQUIRED" no lugar do mapa. OSM padrão não
+        // exige chave nenhuma.
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors',
+            subdomains: 'abc',
             maxZoom: 19
         }).addTo(mapaGeografico);
     }
