@@ -109,6 +109,27 @@ def _build_module_by_student(play_course_payload: list, modulo_map: dict[int, tu
     return resultado
 
 
+def _build_trilha_groups(courses_payload: list) -> dict[str, set[str]]:
+    """Pra cada courseId, o conjunto de GroupNames (normalizados) que a
+    Ludos associa oficialmente a esse curso via /report/courses[].groups[].
+    É a fonte de verdade de "quais turmas pertencem a essa trilha" — sem
+    isso, o rollup de uma trilha contava TODO aluno ativo, mesmo quando a
+    turma dele nunca foi vinculada àquele curso na Ludos (ex: a Trilha
+    Pocket só tem uma turma associada lá, mas o dashboard mostrava as 22
+    turmas da Secretaria inteiras nela)."""
+    grupos: dict[str, set[str]] = {}
+    for course in courses_payload or []:
+        course_id = str(_field(course, "courseId", default=""))
+        if not course_id:
+            continue
+        grupos[course_id] = {
+            str(g.get("groupName", "")).strip().lower()
+            for g in (course.get("groups") or [])
+            if g.get("groupName")
+        }
+    return grupos
+
+
 def _upsert_students(db: Session, players: list, school_turma_cache: dict) -> tuple[dict[str, Student], dict[str, dict]]:
     """Cria/atualiza os alunos a partir de /report/players. Devolve dois
     dicionários indexados por external_id (playerId):
@@ -278,12 +299,21 @@ def _upsert_progress(
 def _process_trilha(
     db: Session, performance: list, trilha_id: str, trilha_nome: str,
     player_extra: dict, students_by_id: dict, school_turma_cache: dict,
-    module_by_student: dict[str, str],
+    module_by_student: dict[str, str], grupos_da_trilha: set[str] | None,
 ) -> None:
     """Processa uma trilha (CourseId) inteira: filtra o /report/performance
     pra esse curso, calcula os rollups (geral, módulo, escola/turma) e
     grava tudo em MetricSnapshot já marcado com esse trilha_id — sem
-    misturar números de trilhas diferentes."""
+    misturar números de trilhas diferentes.
+
+    `grupos_da_trilha`: GroupNames (normalizados, minúsculo/sem espaço nas
+    pontas) que a Ludos associa de fato a esse curso, via
+    /report/courses[].groups[] (ver _build_trilha_groups). Só turma
+    listada ali conta pra essa trilha — sem isso, TODO aluno ativo virava
+    "inscrito" em QUALQUER trilha (ex: a Trilha Pocket, que só tem uma
+    turma de teste associada na Ludos, aparecia com as 22 turmas da
+    Secretaria inteiras). None (curso ainda não sincronizado em
+    /report/courses) = sem filtro, mantém o comportamento anterior."""
     inscritos_ids: dict[str, set] = defaultdict(set)
     engaged_ids: dict[str, set] = defaultdict(set)
     completed_ids: dict[str, set] = defaultdict(set)
@@ -317,8 +347,9 @@ def _process_trilha(
     # Sem esta base, "inscritos" ficava, na prática, igual a "engajados"
     # (daí a taxa de engajamento aparecer sempre 100%), e turmas inteiras
     # que ainda não começaram a trilha sumiam do rollup por escola/turma.
-    # Como a Ludos não expõe em qual trilha cada aluno está matriculado,
-    # aplicamos a mesma base pra todas as trilhas em TRILHAS.
+    # Restrita às turmas de fato associadas a essa trilha em
+    # /report/courses[].groups[] (grupos_da_trilha) — sem isso, um aluno
+    # de qualquer turma da Secretaria virava "inscrito" até na Pocket.
     for external_id, extra in player_extra.items():
         student_account = students_by_id.get(external_id)
         if student_account is not None and (
@@ -327,6 +358,8 @@ def _process_trilha(
             continue
         group_name = str(extra.get("group_name") or "Sem Turma")
         if is_excluded_group(group_name):
+            continue
+        if grupos_da_trilha is not None and group_name.strip().lower() not in grupos_da_trilha:
             continue
         inst = get_institution(group_name)
         for scope in (inst, "todas"):
@@ -589,6 +622,10 @@ def rebuild_metrics(db: Session) -> None:
     login_log = _latest_payload(db, "/report/logs") or []
     courses = _latest_payload(db, "/report/courses") or []
     module_positions_por_trilha = _build_module_positions(courses)
+    # None quando /report/courses ainda não foi sincronizado nenhuma vez —
+    # nesse caso _process_trilha não filtra por turma (comportamento antigo),
+    # em vez de zerar tudo por falta desse dado auxiliar.
+    grupos_por_trilha = _build_trilha_groups(courses) if courses else None
     module_por_aluno_por_trilha = {
         trilha_id: _build_module_by_student(
             _latest_payload(db, f"/report/play/course/{trilha_id}") or [],
@@ -632,6 +669,7 @@ def rebuild_metrics(db: Session) -> None:
             db, performance, trilha_id, trilha_nome,
             player_extra, students_by_id, school_turma_cache,
             module_por_aluno_por_trilha.get(trilha_id, {}),
+            grupos_por_trilha.get(trilha_id, set()) if grupos_por_trilha is not None else None,
         )
 
     _limpar_snapshots_antigos(db)
