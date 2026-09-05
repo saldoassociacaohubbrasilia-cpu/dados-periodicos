@@ -59,6 +59,15 @@
             background-repeat: repeat-x;
             background-size: 80px 14px;
         }
+        /* Faixa de topo — mesmo padrão, mais alta e logo no início da
+           página (antes até do cabeçalho), pra ser a primeira coisa que
+           a tela mostra, como na landing do Saldo+. */
+        .barra-topo {
+            height: 26px;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='40' viewBox='0 0 160 40'%3E%3Crect x='8' y='16' width='24' height='8' rx='4' fill='%23EC8322'/%3E%3Crect x='16' y='8' width='8' height='24' rx='4' fill='%23EC8322'/%3E%3Crect x='48' y='16' width='24' height='8' rx='4' fill='%2300B4AA'/%3E%3Crect x='56' y='8' width='8' height='24' rx='4' fill='%2300B4AA'/%3E%3Crect x='88' y='16' width='24' height='8' rx='4' fill='%23FC027D'/%3E%3Crect x='96' y='8' width='8' height='24' rx='4' fill='%23FC027D'/%3E%3Crect x='128' y='16' width='24' height='8' rx='4' fill='%23605BE5'/%3E%3Crect x='136' y='8' width='8' height='24' rx='4' fill='%23605BE5'/%3E%3C/svg%3E");
+            background-repeat: repeat-x;
+            background-size: 104px 26px;
+        }
 
         /* ---------- Cabeçalho ---------- */
         .topo { background: linear-gradient(155deg, var(--navy) 0%, var(--navy-ink) 100%); color: #fff; padding: 26px 32px 0; }
@@ -219,6 +228,8 @@
 </head>
 <body>
 
+<div class="barra-topo" aria-hidden="true"></div>
+
 <header class="topo">
     <div class="topo-inner">
         <div class="marca">
@@ -242,7 +253,6 @@
         <button class="aba-btn" data-pagina="metodologia" role="tab" aria-selected="false">4 · Metodologia</button>
     </nav>
 </header>
-<div class="barra-mais" aria-hidden="true"></div>
 
 <main class="wrap">
 
