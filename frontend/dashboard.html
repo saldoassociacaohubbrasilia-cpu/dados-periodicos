@@ -7,7 +7,7 @@
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%23002364'/%3E%3Crect x='10' y='4' width='4' height='16' rx='2' fill='%23EC8322'/%3E%3Crect x='4' y='10' width='16' height='4' rx='2' fill='%23EC8322'/%3E%3C/svg%3E">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@600;700&family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
         :root {
             /* Paleta oficial Saldo+ — extraída do CSS publicado em
@@ -36,6 +36,7 @@
             --radius-md: 14px;
             --radius-pill: 999px;
             --font: 'Poppins', system-ui, sans-serif;
+            --font-display: 'Fredoka', 'Poppins', system-ui, sans-serif;
         }
 
         * { box-sizing: border-box; }
@@ -74,7 +75,7 @@
         .topo-inner { max-width: 1180px; margin: 0 auto; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 18px; padding-bottom: 22px; }
 
         .marca { display: flex; align-items: center; gap: 14px; }
-        .marca-nome { font-size: 26px; font-weight: 800; letter-spacing: -.3px; margin: 0; }
+        .marca-nome { font: 700 26px var(--font-display); letter-spacing: -.3px; margin: 0; }
         .marca-nome span { color: var(--orange); }
         .marca-sub { margin: 2px 0 0; font-size: 13px; font-weight: 500; color: #C3D0F0; }
 
@@ -117,7 +118,7 @@
         .kpi-icone { width: 34px; height: 34px; border-radius: 10px; display: flex; align-items: center; justify-content: center; color: #fff; flex-shrink: 0; }
         .kpi-icone svg { width: 17px; height: 17px; }
         .kpi-rotulo { font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
-        .kpi-valor { font-size: 28px; font-weight: 800; line-height: 1; color: var(--ink); }
+        .kpi-valor { font: 600 28px var(--font-display); line-height: 1; color: var(--ink); }
         .kpi-tendencia { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; color: var(--good); background: var(--good-bg); padding: 3px 9px; border-radius: var(--radius-pill); width: fit-content; }
 
         /* ---------- Destaques ---------- */
