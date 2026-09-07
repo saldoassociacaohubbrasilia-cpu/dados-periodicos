@@ -22,6 +22,16 @@ const fmtInt = (num) => new Intl.NumberFormat('pt-BR').format(num || 0);
 const fmtPct = (num) => (num || 0).toFixed(1) + '%';
 function setKpi(id, text) { const el = document.getElementById(id); if (el) el.textContent = text; }
 
+// Nome/login de aluno, turma e escola vêm da Ludos — cadastrados por
+// gente de várias escolas, não é um dado confiável pra jogar direto em
+// innerHTML. Escapa antes de montar qualquer HTML com esses campos
+// (serve tanto pra texto quanto pra dentro de atributo, tipo data-turma).
+function escapeHtml(valor) {
+    return String(valor ?? '').replace(/[&<>"']/g, (c) => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+    }[c]));
+}
+
 // O filtro superior é um único select combinando trilha + instituição
 // (ex: "41:secretaria" = Trilha Saldo+ SEEDF) — a Pocket não tem
 // separação por instituição hoje, só a Saldo+ precisa disso.
@@ -89,7 +99,7 @@ function atualizarMapa(dadosEscolas, instituicaoId) {
                 radius: 9
             }).addTo(mapaGeografico);
 
-            circle.bindPopup(`<b>${escola.nome}</b><br>Engajamento: ${fmtPct(escola.engajamento_pct)}`);
+            circle.bindPopup(`<b>${escapeHtml(escola.nome)}</b><br>Engajamento: ${fmtPct(escola.engajamento_pct)}`);
             marcadoresMapa.push(circle);
         }
     });
@@ -120,13 +130,14 @@ function gerarInsightEscolas(escolas) {
     const comEngajamento = escolas.filter(e => e.engajados > 0);
     const lider = [...escolas].sort((a, b) => b.engajamento_pct - a.engajamento_pct)[0];
 
+    const nomeLider = escapeHtml(lider.nome);
     let texto;
     if (comEngajamento.length === 0) {
         texto = `Nenhuma escola tem estudante engajado ainda neste filtro — os ${escolas.length} inscritos ainda não começaram a trilha.`;
     } else if (comEngajamento.length === 1) {
-        texto = `<strong>${lider.nome}</strong> concentra todo o engajamento real até agora (${fmtPct(lider.engajamento_pct)}) — as outras ${escolas.length - 1} escolas têm estudantes inscritos, mas nenhum começou a trilha.`;
+        texto = `<strong>${nomeLider}</strong> concentra todo o engajamento real até agora (${fmtPct(lider.engajamento_pct)}) — as outras ${escolas.length - 1} escolas têm estudantes inscritos, mas nenhum começou a trilha.`;
     } else {
-        texto = `<strong>${lider.nome}</strong> lidera com ${fmtPct(lider.engajamento_pct)} de engajamento, entre ${comEngajamento.length} de ${escolas.length} escolas já com algum estudante engajado.`;
+        texto = `<strong>${nomeLider}</strong> lidera com ${fmtPct(lider.engajamento_pct)} de engajamento, entre ${comEngajamento.length} de ${escolas.length} escolas já com algum estudante engajado.`;
     }
     el.innerHTML = texto;
     el.hidden = false;
@@ -206,8 +217,8 @@ function renderizarTabelaTurmas(turmas) {
     turmas.forEach(t => {
         const tr = document.createElement('tr');
         tr.innerHTML = `
-            <td style="font-weight: 700; color: ${NAVY};">${t.nome}</td>
-            <td>${t.escola}</td>
+            <td style="font-weight: 700; color: ${NAVY};">${escapeHtml(t.nome)}</td>
+            <td>${escapeHtml(t.escola)}</td>
             <td class="num">${fmtInt(t.total_alunos)}</td>
             <td class="num">${fmtInt(t.alunos_engajados)}</td>
             <td>
@@ -216,7 +227,7 @@ function renderizarTabelaTurmas(turmas) {
                     <small class="num">${fmtPct(t.progresso_medio)}</small>
                 </div>
             </td>
-            <td><button class="btn-ver-alunos" data-turma="${t.nome}">Ver Estudantes</button></td>
+            <td><button class="btn-ver-alunos" data-turma="${escapeHtml(t.nome)}">Ver Estudantes</button></td>
         `;
         tbody.appendChild(tr);
     });
@@ -273,7 +284,7 @@ function renderizarResumoAlertasPorEscola(porEscola, escolasInfo) {
     const totalDaEscola = inscritosPorEscola[piorNome];
     const trechoTotal = totalDaEscola ? ` de ${fmtInt(totalDaEscola)} inscritos` : '';
     if (elInsight) {
-        elInsight.innerHTML = `<strong>${piorNome}</strong> é a escola com mais alertas: ${fmtInt(piorResumo.total_em_alerta)}${trechoTotal} estudantes nunca acessaram ou estão sem acesso há mais de 10 dias.`;
+        elInsight.innerHTML = `<strong>${escapeHtml(piorNome)}</strong> é a escola com mais alertas: ${fmtInt(piorResumo.total_em_alerta)}${trechoTotal} estudantes nunca acessaram ou estão sem acesso há mais de 10 dias.`;
         elInsight.hidden = false;
     }
 
@@ -283,7 +294,7 @@ function renderizarResumoAlertasPorEscola(porEscola, escolasInfo) {
         const pct = total ? (100 * r.total_em_alerta / total) : null;
         const tr = document.createElement('tr');
         tr.innerHTML = `
-            <td style="font-weight:700;color:${NAVY};">${nome}</td>
+            <td style="font-weight:700;color:${NAVY};">${escapeHtml(nome)}</td>
             <td class="num">${total !== undefined ? fmtInt(total) : '—'}</td>
             <td class="num">${fmtInt(r.total_em_alerta)}</td>
             <td class="num">${pct !== null ? fmtPct(pct) : '—'}</td>
@@ -343,11 +354,11 @@ async function carregarAlertas(instituicaoId, escolasInfo) {
             const tr = document.createElement('tr');
             const rotuloInstituicao = a.instituicao === 'cvp' ? 'CVP' : 'Secretaria de Educação';
             tr.innerHTML = `
-                <td style="font-weight:600;">${a.nome}</td>
-                <td>${a.escola}</td>
-                <td>${a.turma}</td>
+                <td style="font-weight:600;">${escapeHtml(a.nome)}</td>
+                <td>${escapeHtml(a.escola)}</td>
+                <td>${escapeHtml(a.turma)}</td>
                 <td>${rotuloInstituicao}</td>
-                <td><span class="pill-status pill-alerta">${a.motivo_alerta}</span></td>
+                <td><span class="pill-status pill-alerta">${escapeHtml(a.motivo_alerta)}</span></td>
             `;
             tbody.appendChild(tr);
         });
@@ -491,16 +502,16 @@ function abrirModalTurma(nomeTurma) {
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
                     <td style="font-weight: 700; color: ${ORANGE};">${a.posicao_na_turma}º</td>
-                    <td style="font-weight: 600;">${a.nome}</td>
-                    <td>${a.login}</td>
+                    <td style="font-weight: 600;">${escapeHtml(a.nome)}</td>
+                    <td>${escapeHtml(a.login)}</td>
                     <td>
                         <div class="progress-cel">
                             <div class="progress-track" style="width:80px;"><div class="progress-fill" style="width:${a.progresso_pct}%;"></div></div>
                             <small class="num">${fmtPct(a.progresso_pct)}</small>
                         </div>
                     </td>
-                    <td>${a.modulo}</td>
-                    <td>${a.status}</td>
+                    <td>${escapeHtml(a.modulo)}</td>
+                    <td>${escapeHtml(a.status)}</td>
                 `;
                 tbody.appendChild(tr);
             });
