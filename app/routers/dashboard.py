@@ -11,8 +11,14 @@ from app.institutions import (
     get_school_display_name, is_excluded_group,
 )
 from app.ingestion.transform import calcular_alerta_aluno, DIAS_LIMITE_INATIVIDADE
+from app.auth import get_current_user, require_role
 
-router = APIRouter(prefix="/api/v1", tags=["dashboard"])
+# dependencies=[...] no nível do router protege TODO endpoint aqui —
+# nenhuma função individual precisou mudar de assinatura. Sem token
+# válido (ver app/auth.py:get_current_user), a API já devolve 401 antes
+# de qualquer cálculo rodar; o frontend também bloqueia a tela, mas
+# quem garante de verdade é essa proteção aqui, não a do JS.
+router = APIRouter(prefix="/api/v1", tags=["dashboard"], dependencies=[Depends(get_current_user)])
 
 # Trilhas disponíveis pro parâmetro `trilha` dos endpoints abaixo. Ver
 # app/ingestion/transform.py:TRILHAS — precisa bater com as mesmas chaves.
@@ -380,7 +386,7 @@ def get_usuarios_ativos_semana(instituicao: str = "todas", db: Session = Depends
     }
 
 
-@router.post("/sync/run")
+@router.post("/sync/run", dependencies=[Depends(require_role("admin", "gestor"))])
 def trigger_manual_sync():
     from app.ingestion.sync_job import run_sync
     executou = run_sync()

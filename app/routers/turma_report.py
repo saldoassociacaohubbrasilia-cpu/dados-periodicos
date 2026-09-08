@@ -11,8 +11,9 @@ from app.database import get_db
 from app.models import Turma, Student, StudentProgress
 from app.ingestion.transform import calcular_alerta_aluno, TRILHAS
 from app.institutions import get_school_display_name
+from app.auth import get_current_user
 
-router = APIRouter(prefix="/api/v1/turma", tags=["relatorio-turma"])
+router = APIRouter(prefix="/api/v1/turma", tags=["relatorio-turma"], dependencies=[Depends(get_current_user)])
 
 NAVY = "#002364"
 GREEN = "#10B981"

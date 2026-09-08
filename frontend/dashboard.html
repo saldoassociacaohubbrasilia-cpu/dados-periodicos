@@ -221,6 +221,24 @@
 
         .icon { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
+        /* ---------- Usuário logado / sair ---------- */
+        .usuario-logado { display: flex; align-items: center; gap: 10px; padding-left: 14px; margin-left: 4px; border-left: 1px solid rgba(255,255,255,.18); }
+        .usuario-avatar {
+            width: 30px; height: 30px; border-radius: 50%; background: var(--orange); color: #fff;
+            display: flex; align-items: center; justify-content: center; font: 700 12px var(--font-display);
+            flex-shrink: 0;
+        }
+        .usuario-texto { display: flex; flex-direction: column; line-height: 1.25; }
+        .usuario-nome { font-size: 12.5px; font-weight: 700; color: #fff; }
+        .usuario-papel { font-size: 10.5px; color: #9FB1E0; text-transform: capitalize; }
+        .btn-sair {
+            font-family: var(--font); font-size: 12px; font-weight: 700; color: #fff;
+            background: rgba(255,255,255,.12); border: none; border-radius: var(--radius-pill);
+            padding: 7px 14px; cursor: pointer; white-space: nowrap;
+        }
+        .btn-sair:hover { background: rgba(255,255,255,.22); }
+        .btn-sair:focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; }
+
         /* ---------- Rodapé ---------- */
         .rodape { text-align: center; padding: 44px 20px 10px; }
         .rodape p { font-size: 12.5px; color: var(--muted); margin: 14px 0 0; }
@@ -245,6 +263,14 @@
                 <option value="41:secretaria" selected>Trilha Saldo+ SEEDF</option>
                 <option value="41:cvp">Trilha Saldo+ CVP</option>
             </select>
+            <div class="usuario-logado" id="usuario-logado" hidden>
+                <span class="usuario-avatar" id="usuario-avatar">?</span>
+                <span class="usuario-texto">
+                    <span class="usuario-nome" id="usuario-nome">—</span>
+                    <span class="usuario-papel" id="usuario-papel">—</span>
+                </span>
+                <button class="btn-sair" id="btn-sair">Sair</button>
+            </div>
         </div>
     </div>
     <nav class="abas" role="tablist" aria-label="Seções do painel">
@@ -541,8 +567,8 @@
             </div>
         </div>
         <div class="modal-footer">
-            <a id="modal-baixar-pdf" class="btn-download btn-download-pdf" href="#" target="_blank" rel="noopener">Baixar PDF</a>
-            <a id="modal-baixar-excel" class="btn-download btn-download-excel" href="#" target="_blank" rel="noopener">Baixar Excel</a>
+            <button id="modal-baixar-pdf" class="btn-download btn-download-pdf" type="button">Baixar PDF</button>
+            <button id="modal-baixar-excel" class="btn-download btn-download-excel" type="button">Baixar Excel</button>
         </div>
     </div>
 </div>

@@ -20,6 +20,13 @@ class Settings(BaseSettings):
     # de tendência histórica sem deixar a tabela crescer pra sempre.
     metric_snapshot_retention_days: int = 90
 
+    # Login/autenticação. Sem default de propósito: sem essa variável
+    # configurada (Render → Environment), a aplicação nem sobe — mais
+    # seguro do que rodar com uma chave previsível.
+    jwt_secret_key: str
+    jwt_algorithm: str = "HS256"
+    jwt_expire_minutes: int = 60 * 24 * 7  # 7 dias — sessão persistente
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
 

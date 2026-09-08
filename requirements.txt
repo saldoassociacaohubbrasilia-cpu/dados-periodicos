@@ -10,3 +10,6 @@ APScheduler
 python-dotenv
 reportlab
 openpyxl
+bcrypt
+PyJWT
+email-validator

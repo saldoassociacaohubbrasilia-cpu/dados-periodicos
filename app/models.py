@@ -195,3 +195,26 @@ class MetricSnapshot(Base):
     taxa_conclusao: Mapped[float] = mapped_column(Float, default=0.0)
     taxa_retencao: Mapped[float] = mapped_column(Float, default=0.0)
     pontuacao_media: Mapped[float] = mapped_column(Float, default=0.0)
+
+
+# ======================================================================
+# CAMADA 3 — ACESSO: quem pode logar no dashboard e com qual papel.
+# Não tem relação nenhuma com os dados da Ludos — é só controle de
+# acesso à própria aplicação.
+# ======================================================================
+
+class User(Base):
+    # "users", não "user" — "user" é palavra reservada no Postgres.
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String(255))
+    name: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    # "admin" | "gestor" | "usuario" — sem enum no banco de propósito:
+    # criar um papel novo no futuro é só usar a string, sem migration.
+    # A validação de quais papéis existem fica no código (app/auth.py).
+    role: Mapped[str] = mapped_column(String(20), default="usuario")
+    is_active: Mapped[bool] = mapped_column(default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_login: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)

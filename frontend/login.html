@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Login · Saldo+</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%23002364'/%3E%3Crect x='10' y='4' width='4' height='16' rx='2' fill='%23EC8322'/%3E%3Crect x='4' y='10' width='16' height='4' rx='2' fill='%23EC8322'/%3E%3C/svg%3E">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@600;700&family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            /* Mesma paleta e tokens do dashboard (frontend/dashboard.html). */
+            --navy: #002364;
+            --navy-ink: #0A2E6E;
+            --teal: #00B4AA;
+            --orange: #EC8322;
+            --pink: #FC027D;
+            --purple: #605BE5;
+            --bg: #F5F6FA;
+            --surface: #FFFFFF;
+            --ink: #1B2140;
+            --muted: #6B7192;
+            --border: #E4E6F0;
+            --danger: #B5650F;
+            --danger-bg: #FBF0E2;
+            --radius-lg: 20px;
+            --radius-pill: 999px;
+            --font: 'Poppins', system-ui, sans-serif;
+            --font-display: 'Fredoka', 'Poppins', system-ui, sans-serif;
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: var(--font);
+            background: var(--bg);
+            color: var(--ink);
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .barra-topo {
+            height: 26px;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='40' viewBox='0 0 160 40'%3E%3Crect x='8' y='16' width='24' height='8' rx='4' fill='%23EC8322'/%3E%3Crect x='16' y='8' width='8' height='24' rx='4' fill='%23EC8322'/%3E%3Crect x='48' y='16' width='24' height='8' rx='4' fill='%2300B4AA'/%3E%3Crect x='56' y='8' width='8' height='24' rx='4' fill='%2300B4AA'/%3E%3Crect x='88' y='16' width='24' height='8' rx='4' fill='%23FC027D'/%3E%3Crect x='96' y='8' width='8' height='24' rx='4' fill='%23FC027D'/%3E%3Crect x='128' y='16' width='24' height='8' rx='4' fill='%23605BE5'/%3E%3Crect x='136' y='8' width='8' height='24' rx='4' fill='%23605BE5'/%3E%3C/svg%3E");
+            background-repeat: repeat-x;
+            background-size: 104px 26px;
+        }
+        .centro {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+        }
+        .card-login {
+            width: 100%;
+            max-width: 380px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            padding: 36px 32px 32px;
+        }
+        .marca-nome { font: 700 30px var(--font-display); letter-spacing: -.3px; margin: 0 0 4px; text-align: center; color: var(--navy); }
+        .marca-nome span { color: var(--orange); }
+        .subtitulo { text-align: center; font-size: 13px; color: var(--muted); margin: 0 0 28px; }
+
+        label { display: block; font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 6px; }
+        .campo { margin-bottom: 18px; }
+        input[type="email"], input[type="password"] {
+            width: 100%; font-family: var(--font); font-size: 14px; color: var(--ink);
+            border: 1.5px solid var(--border); border-radius: 12px; padding: 11px 14px;
+            background: var(--bg);
+        }
+        input:focus { outline: none; border-color: var(--teal); background: var(--surface); }
+
+        .btn-entrar {
+            width: 100%; font-family: var(--font); font-weight: 700; font-size: 14px; color: #fff;
+            background: var(--orange); border: none; border-radius: var(--radius-pill);
+            padding: 12px; cursor: pointer; margin-top: 6px;
+        }
+        .btn-entrar:hover { filter: brightness(1.05); }
+        .btn-entrar:disabled { opacity: .6; cursor: default; }
+        .btn-entrar:focus-visible { outline: 2px solid var(--navy); outline-offset: 2px; }
+
+        .erro {
+            background: var(--danger-bg); color: var(--danger); font-size: 12.5px; font-weight: 600;
+            border-radius: 10px; padding: 9px 12px; margin-bottom: 16px;
+        }
+        .rodape-login { text-align: center; font-size: 11.5px; color: var(--muted); margin-top: 22px; }
+    </style>
+</head>
+<body>
+
+<div class="barra-topo" aria-hidden="true"></div>
+
+<div class="centro">
+    <div class="card-login">
+        <p class="marca-nome">Saldo<span>+</span></p>
+        <p class="subtitulo">Entrar no painel de acompanhamento</p>
+
+        <div class="erro" id="erro-login" hidden></div>
+
+        <form id="form-login">
+            <div class="campo">
+                <label for="campo-email">E-mail</label>
+                <input type="email" id="campo-email" name="email" autocomplete="username" required>
+            </div>
+            <div class="campo">
+                <label for="campo-senha">Senha</label>
+                <input type="password" id="campo-senha" name="senha" autocomplete="current-password" required>
+            </div>
+            <button type="submit" class="btn-entrar" id="btn-entrar">Entrar</button>
+        </form>
+
+        <p class="rodape-login">Programa Saldo+ · acesso restrito</p>
+    </div>
+</div>
+
+<script>
+    const API_BASE = 'https://dados-periodicos.onrender.com/api/v1';
+    const AUTH_STORAGE_KEY = 'saldo_auth';
+
+    // Já logado? Não faz sentido mostrar o login de novo.
+    if (localStorage.getItem(AUTH_STORAGE_KEY)) {
+        window.location.replace('dashboard.html');
+    }
+
+    const form = document.getElementById('form-login');
+    const btn = document.getElementById('btn-entrar');
+    const elErro = document.getElementById('erro-login');
+
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        elErro.hidden = true;
+        btn.disabled = true;
+        btn.textContent = 'Entrando...';
+
+        try {
+            const res = await fetch(`${API_BASE}/auth/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    email: document.getElementById('campo-email').value.trim(),
+                    senha: document.getElementById('campo-senha').value,
+                }),
+            });
+
+            if (!res.ok) {
+                const corpo = await res.json().catch(() => ({}));
+                throw new Error(corpo.detail || 'Não foi possível entrar.');
+            }
+
+            const dados = await res.json();
+            localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({
+                token: dados.access_token,
+                email: dados.usuario.email,
+                name: dados.usuario.name,
+                role: dados.usuario.role,
+            }));
+            window.location.replace('dashboard.html');
+        } catch (err) {
+            elErro.textContent = err.message || 'E-mail ou senha inválidos.';
+            elErro.hidden = false;
+            btn.disabled = false;
+            btn.textContent = 'Entrar';
+        }
+    });
+</script>
+
+</body>
+</html>

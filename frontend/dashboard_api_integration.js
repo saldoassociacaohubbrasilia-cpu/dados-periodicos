@@ -7,6 +7,70 @@
 const API_BASE = 'https://dados-periodicos.onrender.com/api/v1';
 const NAVY = '#002364', TEAL = '#00B4AA', ORANGE = '#EC8322', PINK = '#FC027D', PURPLE = '#605BE5';
 
+// ---------- Sessão / autenticação ----------
+// Frontend é estático (GitHub Pages) chamando a API cross-origin, então
+// a "sessão" é um token JWT guardado no localStorage — mandado em
+// Authorization: Bearer em toda chamada. Quem garante de verdade que só
+// autenticado vê dado é a API (ver app/auth.py:get_current_user no
+// backend); isso aqui só evita mostrar a tela sem token.
+const AUTH_STORAGE_KEY = 'saldo_auth';
+
+function lerAuth() {
+    try {
+        return JSON.parse(localStorage.getItem(AUTH_STORAGE_KEY) || 'null');
+    } catch {
+        return null;
+    }
+}
+
+function fazerLogout() {
+    localStorage.removeItem(AUTH_STORAGE_KEY);
+    window.location.replace('login.html');
+}
+
+// Roda antes de qualquer outra coisa no arquivo — se não tem sessão,
+// manda pro login sem nem tentar carregar o resto da página.
+const AUTH_ATUAL = lerAuth();
+if (!AUTH_ATUAL) {
+    window.location.replace('login.html');
+}
+
+// fetch com o header de autenticação já embutido — usar em toda chamada
+// à API. Em 401 (token expirado/inválido), desloga e manda pro login em
+// vez de deixar a tela com dado quebrado.
+async function fetchAutenticado(url, options = {}) {
+    const auth = lerAuth();
+    const res = await fetch(url, {
+        ...options,
+        headers: { ...(options.headers || {}), 'Authorization': `Bearer ${auth ? auth.token : ''}` },
+    });
+    if (res.status === 401) {
+        fazerLogout();
+        throw new Error('Sessão expirada.');
+    }
+    return res;
+}
+
+// Baixa um arquivo autenticado (PDF/Excel) — um <a href> comum não
+// consegue mandar o header de autenticação, então busca como blob e
+// aciona o download programaticamente.
+async function baixarArquivoAutenticado(url, nomeArquivo) {
+    const res = await fetchAutenticado(url);
+    if (!res.ok) {
+        alert('Não foi possível baixar o arquivo agora.');
+        return;
+    }
+    const blob = await res.blob();
+    const urlBlob = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = urlBlob;
+    link.download = nomeArquivo;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(urlBlob);
+}
+
 Chart.defaults.font.family = "'Poppins', system-ui, sans-serif";
 Chart.defaults.color = '#6B7192';
 
@@ -331,7 +395,7 @@ function renderizarGraficoMotivoAlerta(totalNuncaAcessou, totalInativoRecente) {
 async function carregarAlertas(instituicaoId, escolasInfo) {
     const tbody = document.querySelector('#tabela-alertas tbody');
     try {
-        const res = await fetch(`${API_BASE}/alertas?instituicao=${instituicaoId}`);
+        const res = await fetchAutenticado(`${API_BASE}/alertas?instituicao=${instituicaoId}`);
         if (!res.ok) throw new Error(`Erro na API: ${res.status}`);
         const dados = await res.json();
 
@@ -372,7 +436,7 @@ async function carregarAlertas(instituicaoId, escolasInfo) {
 // último login na Ludos como um todo, não num curso específico).
 async function carregarUsuariosAtivos(instituicaoId) {
     try {
-        const res = await fetch(`${API_BASE}/usuarios-ativos-semana?instituicao=${instituicaoId}`);
+        const res = await fetchAutenticado(`${API_BASE}/usuarios-ativos-semana?instituicao=${instituicaoId}`);
         if (!res.ok) throw new Error(`Erro na API: ${res.status}`);
         const dados = await res.json();
 
@@ -423,7 +487,7 @@ async function carregarDashboard(instituicaoId, trilhaId) {
     }
 
     try {
-        const res = await fetch(`${API_BASE}/dashboard?instituicao=${instituicaoId}&trilha=${trilhaId}`);
+        const res = await fetchAutenticado(`${API_BASE}/dashboard?instituicao=${instituicaoId}&trilha=${trilhaId}`);
 
         if (!res.ok) {
             throw new Error(`Erro na API: ${res.status}`);
@@ -469,10 +533,15 @@ function abrirModalTurma(nomeTurma) {
 
     const { trilha: trilhaId } = lerFiltroSelecionado();
     const params = `nome=${encodeURIComponent(nomeTurma)}&trilha=${encodeURIComponent(trilhaId)}`;
-    document.getElementById('modal-baixar-pdf').href = `${API_BASE}/turma/relatorio/pdf?${params}`;
-    document.getElementById('modal-baixar-excel').href = `${API_BASE}/turma/relatorio/excel?${params}`;
 
-    fetch(`${API_BASE}/turma/relatorio?${params}`)
+    // Botões (não <a href>: um link puro não consegue mandar o header de
+    // autenticação) — busca autenticada como blob e aciona o download.
+    const btnPdf = document.getElementById('modal-baixar-pdf');
+    const btnExcel = document.getElementById('modal-baixar-excel');
+    btnPdf.onclick = () => baixarArquivoAutenticado(`${API_BASE}/turma/relatorio/pdf?${params}`, `relatorio-${nomeTurma}.pdf`);
+    btnExcel.onclick = () => baixarArquivoAutenticado(`${API_BASE}/turma/relatorio/excel?${params}`, `relatorio-${nomeTurma}.xlsx`);
+
+    fetchAutenticado(`${API_BASE}/turma/relatorio?${params}`)
         .then(res => {
             if (!res.ok) throw new Error(`Erro na API: ${res.status}`);
             return res.json();
@@ -540,8 +609,33 @@ function ativarAba(nomePagina) {
     if (alvo) alvo.classList.add('ativa');
 }
 
+// Preenche o cabeçalho com quem está logado e liga o botão de sair.
+// O redirect pra login em caso de sessão ausente já rodou no topo do
+// arquivo (AUTH_ATUAL) — aqui é só exibição.
+function exibirUsuarioLogado() {
+    const auth = lerAuth();
+    if (!auth) return;
+
+    const PAPEL_LABEL = { admin: 'Administrador', gestor: 'Gestor', usuario: 'Usuário' };
+
+    const nomeExibido = auth.name || auth.email;
+    setKpi('usuario-nome', nomeExibido);
+    setKpi('usuario-papel', PAPEL_LABEL[auth.role] || auth.role);
+    setKpi('usuario-avatar', nomeExibido.charAt(0).toUpperCase());
+
+    const bloco = document.getElementById('usuario-logado');
+    if (bloco) bloco.hidden = false;
+
+    const btnSair = document.getElementById('btn-sair');
+    if (btnSair) btnSair.addEventListener('click', fazerLogout);
+}
+
 // Event Listeners
 document.addEventListener('DOMContentLoaded', () => {
+    if (!lerAuth()) return; // já foi redirecionado pro login lá em cima
+
+    exibirUsuarioLogado();
+
     const selectUnico = document.getElementById('filtro-select');
 
     const { trilha: trilhaInicial, instituicao: instituicaoInicial } = lerFiltroSelecionado();
