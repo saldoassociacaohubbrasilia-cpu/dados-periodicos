@@ -80,6 +80,7 @@ let chartEscolas = null;
 let chartTrilhas = null;
 let mapaGeografico = null;
 let marcadoresMapa = [];
+let ALERTAS_ATUAIS = []; // última lista carregada — a busca filtra em cima dela, sem refazer a chamada
 
 // Funções utilitárias de formatação
 const fmtInt = (num) => new Intl.NumberFormat('pt-BR').format(num || 0);
@@ -392,8 +393,56 @@ function renderizarGraficoMotivoAlerta(totalNuncaAcessou, totalInativoRecente) {
     });
 }
 
+function renderizarLinhasAlertas(lista, termoBusca) {
+    const tbody = document.querySelector('#tabela-alertas tbody');
+    if (!lista.length) {
+        const mensagem = termoBusca
+            ? 'Nenhum estudante encontrado para essa busca.'
+            : 'Nenhum estudante em alerta para esse filtro — tudo em dia.';
+        tbody.innerHTML = `<tr><td colspan="5"><div class="empty-state">${escapeHtml(mensagem)}</div></td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = '';
+    lista.forEach(a => {
+        const tr = document.createElement('tr');
+        const rotuloInstituicao = a.instituicao === 'cvp' ? 'CVP' : 'Secretaria de Educação';
+        tr.innerHTML = `
+            <td style="font-weight:600;">${escapeHtml(a.nome)}</td>
+            <td>${escapeHtml(a.escola)}</td>
+            <td>${escapeHtml(a.turma)}</td>
+            <td>${rotuloInstituicao}</td>
+            <td><span class="pill-status pill-alerta">${escapeHtml(a.motivo_alerta)}</span></td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+// Busca client-side (a lista já está toda carregada) por nome, escola ou
+// turma — sem acento/maiúscula fazendo diferença, pra achar rápido mesmo
+// digitando errado a acentuação.
+function normalizarBusca(texto) {
+    return String(texto ?? '').normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
+}
+
+function filtrarAlertas() {
+    const termo = normalizarBusca(document.getElementById('busca-alertas').value.trim());
+    if (!termo) {
+        renderizarLinhasAlertas(ALERTAS_ATUAIS, '');
+        return;
+    }
+    const filtrados = ALERTAS_ATUAIS.filter(a =>
+        normalizarBusca(a.nome).includes(termo) ||
+        normalizarBusca(a.escola).includes(termo) ||
+        normalizarBusca(a.turma).includes(termo)
+    );
+    renderizarLinhasAlertas(filtrados, termo);
+}
+
 async function carregarAlertas(instituicaoId, escolasInfo) {
     const tbody = document.querySelector('#tabela-alertas tbody');
+    const campoBusca = document.getElementById('busca-alertas');
+    if (campoBusca) campoBusca.value = ''; // troca de filtro superior limpa a busca anterior
     try {
         const res = await fetchAutenticado(`${API_BASE}/alertas?instituicao=${instituicaoId}`);
         if (!res.ok) throw new Error(`Erro na API: ${res.status}`);
@@ -408,24 +457,8 @@ async function carregarAlertas(instituicaoId, escolasInfo) {
         const totalInativoRecente = Object.values(porEscola).reduce((s, r) => s + r.inativo_recente, 0);
         renderizarGraficoMotivoAlerta(totalNuncaAcessou, totalInativoRecente);
 
-        if (!dados.alertas.length) {
-            tbody.innerHTML = `<tr><td colspan="5"><div class="empty-state">Nenhum estudante em alerta para esse filtro — tudo em dia.</div></td></tr>`;
-            return;
-        }
-
-        tbody.innerHTML = '';
-        dados.alertas.forEach(a => {
-            const tr = document.createElement('tr');
-            const rotuloInstituicao = a.instituicao === 'cvp' ? 'CVP' : 'Secretaria de Educação';
-            tr.innerHTML = `
-                <td style="font-weight:600;">${escapeHtml(a.nome)}</td>
-                <td>${escapeHtml(a.escola)}</td>
-                <td>${escapeHtml(a.turma)}</td>
-                <td>${rotuloInstituicao}</td>
-                <td><span class="pill-status pill-alerta">${escapeHtml(a.motivo_alerta)}</span></td>
-            `;
-            tbody.appendChild(tr);
-        });
+        ALERTAS_ATUAIS = dados.alertas || [];
+        renderizarLinhasAlertas(ALERTAS_ATUAIS, '');
     } catch (err) {
         console.error('Falha ao carregar Sistema de Alertas:', err);
         tbody.innerHTML = `<tr><td colspan="5"><div class="empty-state">Não foi possível carregar os alertas agora.</div></td></tr>`;
@@ -645,6 +678,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const { trilha, instituicao } = lerFiltroSelecionado();
         carregarDashboard(instituicao, trilha);
     });
+
+    const campoBuscaAlertas = document.getElementById('busca-alertas');
+    if (campoBuscaAlertas) campoBuscaAlertas.addEventListener('input', filtrarAlertas);
 
     document.querySelectorAll('.aba-btn').forEach(btn => {
         btn.addEventListener('click', () => ativarAba(btn.dataset.pagina));
