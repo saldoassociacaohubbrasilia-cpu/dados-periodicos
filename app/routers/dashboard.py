@@ -323,7 +323,11 @@ def get_usuarios_ativos_semana(instituicao: str = "todas", db: Session = Depends
     o último login na Ludos como um todo, não em um curso específico.
 
     Também devolve os 7 dias anteriores a esses, pra dar uma noção de
-    tendência (variação %) sem precisar guardar histórico à parte.
+    tendência (variação %) sem precisar guardar histórico à parte, e o
+    total de "Alunos Ativos" — quem já entrou na plataforma pelo menos
+    uma vez (last_access preenchido), sem limite de data — diferente do
+    "ativos na última semana" acima, que é só quem acessou nos últimos
+    7 dias.
     """
     inst_filtro = normalize_institution(instituicao)
     agora = datetime.now(timezone.utc)
@@ -341,13 +345,21 @@ def get_usuarios_ativos_semana(instituicao: str = "todas", db: Session = Depends
 
     ativos_semana_atual = 0
     ativos_semana_anterior = 0
+    # "Alunos Ativos" = já entrou na plataforma pelo menos uma vez (tem
+    # algum last_access registrado) — diferente de "ativos na última
+    # semana", que é só quem acessou nos últimos 7 dias. Todo aluno
+    # nessa contagem já passou pelo cadastro (é um Student sincronizado).
+    ja_acessou_alguma_vez = 0
+    total_considerados = 0
     for last_access, turma_nome in rows:
         if is_excluded_group(turma_nome):
             continue
         if inst_filtro != "todas" and get_institution(turma_nome) != inst_filtro:
             continue
+        total_considerados += 1
         if last_access is None:
             continue
+        ja_acessou_alguma_vez += 1
         if last_access >= limite_semana_atual:
             ativos_semana_atual += 1
         elif last_access >= limite_semana_anterior:
@@ -363,6 +375,8 @@ def get_usuarios_ativos_semana(instituicao: str = "todas", db: Session = Depends
         "ativos_ultima_semana": ativos_semana_atual,
         "ativos_semana_anterior": ativos_semana_anterior,
         "variacao_pct": variacao_pct,
+        "alunos_ativos": ja_acessou_alguma_vez,
+        "total_considerados": total_considerados,
     }
 
 

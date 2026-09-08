@@ -377,6 +377,7 @@ async function carregarUsuariosAtivos(instituicaoId) {
         const dados = await res.json();
 
         setKpi('kpi-ativos-semana', fmtInt(dados.ativos_ultima_semana));
+        setKpi('kpi-estudantes-ativos', fmtInt(dados.alunos_ativos));
 
         const elVariacao = document.getElementById('kpi-ativos-semana-variacao');
         if (elVariacao) {
