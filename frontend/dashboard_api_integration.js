@@ -704,6 +704,49 @@ function exibirUsuarioLogado() {
 
     const btnSair = document.getElementById('btn-sair');
     if (btnSair) btnSair.addEventListener('click', fazerLogout);
+
+    // POST /sync/run exige admin ou gestor (ver app/routers/dashboard.py)
+    // — usuário comum nem vê o botão, pra não clicar e tomar 403 à toa.
+    const btnSincronizar = document.getElementById('btn-sincronizar');
+    if (btnSincronizar && (auth.role === 'admin' || auth.role === 'gestor')) {
+        btnSincronizar.hidden = false;
+        btnSincronizar.addEventListener('click', sincronizarAgora);
+    }
+}
+
+// Busca os dados mais recentes da Ludos na hora — o endpoint só devolve
+// a resposta quando a rodada inteira termina (ver POST /sync/run), o
+// que pode levar vários minutos, então o botão fica desabilitado e
+// girando até a resposta voltar, evitando clique duplo.
+async function sincronizarAgora() {
+    const btn = document.getElementById('btn-sincronizar');
+    const texto = document.getElementById('btn-sincronizar-texto');
+    if (!btn || btn.disabled) return;
+
+    btn.disabled = true;
+    btn.classList.add('girando');
+    texto.textContent = 'Sincronizando...';
+
+    try {
+        const res = await fetchAutenticado(`${API_BASE}/sync/run`, { method: 'POST' });
+        if (!res.ok) throw new Error(`Erro na API: ${res.status}`);
+        const dados = await res.json();
+
+        if (dados.status === 'sincronização executada') {
+            const { trilha, instituicao } = lerFiltroSelecionado();
+            await carregarDashboard(instituicao, trilha);
+            alert('Sincronização concluída — dados atualizados.');
+        } else {
+            alert(dados.status || 'Já existe uma sincronização em andamento.');
+        }
+    } catch (err) {
+        console.error('Falha ao sincronizar:', err);
+        alert('Não foi possível sincronizar agora. Tente novamente em instantes.');
+    } finally {
+        btn.disabled = false;
+        btn.classList.remove('girando');
+        texto.textContent = 'Sincronizar';
+    }
 }
 
 // Event Listeners
