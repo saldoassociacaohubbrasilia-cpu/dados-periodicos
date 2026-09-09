@@ -71,6 +71,49 @@ async function baixarArquivoAutenticado(url, nomeArquivo) {
     URL.revokeObjectURL(urlBlob);
 }
 
+// Exporta um gráfico (Chart.js desenha direto num <canvas>, então
+// toDataURL já devolve a imagem final) como PDF, com a data/hora da
+// exportação e o filtro ativo no momento — pra quem abrir o PDF depois
+// saber exatamente de quando é aquele retrato do painel.
+function baixarGraficoPDF(canvasId, titulo) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas || canvas.hidden || !canvas.toDataURL) {
+        alert('Esse gráfico ainda não tem dado carregado pra exportar.');
+        return;
+    }
+
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const margin = 40;
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.setTextColor(0, 35, 100);
+    doc.text('Saldo+', margin, 40);
+
+    doc.setFontSize(13);
+    doc.setTextColor(27, 33, 64);
+    doc.text(titulo, margin, 62);
+
+    const filtroSelect = document.getElementById('filtro-select');
+    const filtroTexto = filtroSelect?.selectedOptions[0]?.textContent || '';
+    const agora = new Date();
+    const dataFormatada = `${agora.toLocaleDateString('pt-BR')} às ${agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    doc.setTextColor(107, 113, 146);
+    doc.text(`${filtroTexto} · Gerado em ${dataFormatada}`, margin, 80);
+
+    const imgWidth = pageWidth - margin * 2;
+    const imgHeight = imgWidth * (canvas.height / canvas.width);
+    doc.addImage(canvas.toDataURL('image/png', 1.0), 'PNG', margin, 100, imgWidth, imgHeight);
+
+    const slug = titulo.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    doc.save(`${slug}-${agora.toISOString().slice(0, 10)}.pdf`);
+}
+
 Chart.defaults.font.family = "'Poppins', system-ui, sans-serif";
 Chart.defaults.color = '#6B7192';
 
@@ -681,6 +724,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const campoBuscaAlertas = document.getElementById('busca-alertas');
     if (campoBuscaAlertas) campoBuscaAlertas.addEventListener('input', filtrarAlertas);
+
+    document.querySelectorAll('.btn-grafico-pdf').forEach(btn => {
+        btn.addEventListener('click', () => baixarGraficoPDF(btn.dataset.canvas, btn.dataset.titulo));
+    });
 
     document.querySelectorAll('.aba-btn').forEach(btn => {
         btn.addEventListener('click', () => ativarAba(btn.dataset.pagina));
