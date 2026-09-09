@@ -24,6 +24,33 @@ TRILHAS: dict[str, str] = {
 # dias desde o último acesso (Student.last_access, vindo do log de login).
 DIAS_LIMITE_INATIVIDADE = 10
 
+# /report/courses às vezes devolve os módulos de um curso fora da ordem
+# real que aparece pro aluno/gestor no painel da Ludos (confirmado por
+# print do painel: na Trilha Saldo+, "3. Dinheiro, e agora?" vem ANTES
+# de "4. Grana com propósito: decisões inteligentes", mas a API devolve
+# esses dois na ordem inversa — moduleId 44 antes do 45). Sem essa
+# correção, a numeração 1/2/3... calculada aqui não batia com a Ludos, e
+# a distribuição por módulo do dashboard saía com o "Módulo 3" errado
+# (ninguém nunca estava nele, porque era na real o módulo 4). Cada par é
+# trocado de posição relativa antes de numerar; módulos não listados
+# aqui mantêm a ordem que a API já devolve.
+CORRECAO_ORDEM_MODULOS: dict[str, list[tuple[int, int]]] = {
+    "41": [(44, 45)],
+}
+
+
+def _corrigir_ordem_modulos(course_id: str, modules: list) -> list:
+    swaps = CORRECAO_ORDEM_MODULOS.get(course_id)
+    if not swaps:
+        return modules
+    modules = list(modules)
+    for id_a, id_b in swaps:
+        indices = {m.get("moduleId"): i for i, m in enumerate(modules)}
+        if id_a in indices and id_b in indices:
+            ia, ib = indices[id_a], indices[id_b]
+            modules[ia], modules[ib] = modules[ib], modules[ia]
+    return modules
+
 
 def _latest_payload(db: Session, endpoint: str):
     row = db.execute(
@@ -55,8 +82,9 @@ def _build_module_positions(courses_payload: list) -> dict[str, dict[int, tuple[
         course_id = str(_field(course, "courseId", default=""))
         if not course_id:
             continue
+        modulos_ordenados = _corrigir_ordem_modulos(course_id, course.get("modules") or [])
         modulo_map: dict[int, tuple[int, str]] = {}
-        for posicao, modulo in enumerate(course.get("modules") or [], start=1):
+        for posicao, modulo in enumerate(modulos_ordenados, start=1):
             module_id = modulo.get("moduleId")
             if module_id is None:
                 continue
@@ -74,38 +102,33 @@ def _build_module_by_student(play_course_payload: list, modulo_map: dict[int, tu
     total que a Ludos usa pra calcular "progression" varia por aluno/hora,
     não é fixo por curso, ver histórico de commits).
 
-    "Mais avançado" = maior posição entre os módulos com pelo menos uma
-    atividade CONCLUÍDA (completed=true em algum play). Sem nenhuma
-    atividade concluída ainda, cai pro módulo de MENOR posição onde o
-    aluno tem qualquer jogada (está tentando esse, ainda não passou)."""
+    "Mais avançado" = maior posição entre TODOS os módulos onde o aluno
+    tem pelo menos uma jogada registrada, concluída ou não. Antes disso
+    olhava só módulo CONCLUÍDO (e só caía pra "em andamento" quando não
+    havia nenhum concluído ainda) — um aluno que já concluiu os módulos 1
+    e 2 e está jogando o 3 sem ainda terminar nenhuma atividade dele
+    ficava "preso" no módulo 2 pra sempre, e o módulo 3 sumia da
+    distribuição mesmo tendo aluno nele. "Onde o aluno está" é o módulo
+    mais avançado que ele já tocou, não o mais avançado que já terminou."""
     resultado: dict[str, str] = {}
     for player in play_course_payload or []:
         external_id = str(_field(player, "playerId", "player_id", default=""))
         if not external_id:
             continue
 
-        melhor_completo: tuple[int, str] | None = None
-        pior_em_andamento: tuple[int, str] | None = None
+        mais_avancado: tuple[int, str] | None = None
         for modulo in player.get("modules") or []:
             info = modulo_map.get(modulo.get("moduleId"))
             if info is None:
                 continue
             posicao, nome = info
             atividades = modulo.get("activities") or []
-            tem_jogada = any(atividades)
-            tem_completa = any(
-                play.get("completed")
-                for atividade in atividades
-                for play in (atividade.get("plays") or [])
-            )
-            if tem_completa and (melhor_completo is None or posicao > melhor_completo[0]):
-                melhor_completo = (posicao, nome)
-            if tem_jogada and (pior_em_andamento is None or posicao < pior_em_andamento[0]):
-                pior_em_andamento = (posicao, nome)
+            tem_jogada = any(atividade.get("plays") for atividade in atividades)
+            if tem_jogada and (mais_avancado is None or posicao > mais_avancado[0]):
+                mais_avancado = (posicao, nome)
 
-        escolhido = melhor_completo or pior_em_andamento
-        if escolhido:
-            resultado[external_id] = escolhido[1]
+        if mais_avancado:
+            resultado[external_id] = mais_avancado[1]
     return resultado
 
 
