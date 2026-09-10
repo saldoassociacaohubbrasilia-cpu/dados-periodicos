@@ -419,6 +419,22 @@
             </div>
         </div>
 
+        <div class="secao" id="secao-ativos-escola">
+            <div class="secao-cabecalho">
+                <h3 class="secao-titulo" style="--accent: var(--purple)">Ranking de Estudantes Ativos por Escola</h3>
+                <button class="btn-grafico-pdf" data-canvas="cAtivosEscola" data-titulo="Ranking de Estudantes Ativos por Escola">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 19h16"/></svg>
+                    PDF
+                </button>
+            </div>
+            <p class="secao-calc">Cálculo: estudantes ativos da escola (já acessaram a plataforma pelo menos uma vez) ÷ estudantes inscritos naquela escola — independe de trilha, já que login não é por curso</p>
+            <canvas id="cAtivosEscola"></canvas>
+            <div class="empty-state chart-empty" id="empty-cAtivosEscola" hidden>
+                Nenhuma escola com dado disponível para esse filtro ainda.
+            </div>
+            <div class="caixa caixa-nota">Diferente do Ranking de Engajamento acima: aqui conta quem já entrou na plataforma, mesmo que ainda não tenha começado a trilha.</div>
+        </div>
+
         <div class="secao" id="secao-mapa">
             <div class="secao-cabecalho">
                 <h3 class="secao-titulo" style="--accent: var(--orange)">Distribuição Geográfica</h3>

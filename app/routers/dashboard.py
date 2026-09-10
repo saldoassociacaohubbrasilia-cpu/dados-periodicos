@@ -357,19 +357,32 @@ def get_usuarios_ativos_semana(instituicao: str = "todas", db: Session = Depends
     # nessa contagem já passou pelo cadastro (é um Student sincronizado).
     ja_acessou_alguma_vez = 0
     total_considerados = 0
+    # Por escola: independente de trilha (login na Ludos não é por curso)
+    # — mostra quem já acessou a plataforma mesmo antes de começar a
+    # trilha de verdade, algo que o Ranking de Engajamento (baseado em
+    # progresso na trilha) não capta. "Sem Turma" não é uma escola, fica
+    # de fora, igual ao resto do dashboard.
+    por_escola: dict[str, dict] = {}
     for last_access, turma_nome in rows:
         if is_excluded_group(turma_nome):
             continue
         if inst_filtro != "todas" and get_institution(turma_nome) != inst_filtro:
             continue
         total_considerados += 1
-        if last_access is None:
-            continue
-        ja_acessou_alguma_vez += 1
-        if last_access >= limite_semana_atual:
-            ativos_semana_atual += 1
-        elif last_access >= limite_semana_anterior:
-            ativos_semana_anterior += 1
+        ativo = last_access is not None
+        if ativo:
+            ja_acessou_alguma_vez += 1
+            if last_access >= limite_semana_atual:
+                ativos_semana_atual += 1
+            elif last_access >= limite_semana_anterior:
+                ativos_semana_anterior += 1
+
+        if turma_nome and turma_nome != "Sem Turma":
+            escola_nome = get_school_display_name(turma_nome)
+            stat = por_escola.setdefault(escola_nome, {"inscritos": 0, "ativos": 0})
+            stat["inscritos"] += 1
+            if ativo:
+                stat["ativos"] += 1
 
     variacao_pct = None
     if ativos_semana_anterior > 0:
@@ -377,12 +390,27 @@ def get_usuarios_ativos_semana(instituicao: str = "todas", db: Session = Depends
             100 * (ativos_semana_atual - ativos_semana_anterior) / ativos_semana_anterior, 1
         )
 
+    ranking_ativos = sorted(
+        (
+            {
+                "escola": nome,
+                "inscritos": stat["inscritos"],
+                "ativos": stat["ativos"],
+                "ativos_pct": round(100 * stat["ativos"] / stat["inscritos"], 2) if stat["inscritos"] else 0.0,
+            }
+            for nome, stat in por_escola.items()
+        ),
+        key=lambda item: item["ativos_pct"],
+        reverse=True,
+    )
+
     return {
         "ativos_ultima_semana": ativos_semana_atual,
         "ativos_semana_anterior": ativos_semana_anterior,
         "variacao_pct": variacao_pct,
         "alunos_ativos": ja_acessou_alguma_vez,
         "total_considerados": total_considerados,
+        "ranking_ativos_por_escola": ranking_ativos,
     }
 
 

@@ -121,6 +121,7 @@ const PALETA = [TEAL, ORANGE, PINK, PURPLE, '#10B981', NAVY];
 
 let chartEscolas = null;
 let chartTrilhas = null;
+let chartAtivosEscola = null;
 let mapaGeografico = null;
 let marcadoresMapa = [];
 let ALERTAS_ATUAIS = []; // última lista carregada — a busca filtra em cima dela, sem refazer a chamada
@@ -528,9 +529,44 @@ async function carregarUsuariosAtivos(instituicaoId) {
                 elVariacao.textContent = `${sinal}${dados.variacao_pct}% vs. semana anterior`;
             }
         }
+
+        renderizarGraficoAtivosEscola(dados.ranking_ativos_por_escola || []);
     } catch (err) {
         console.error('Falha ao carregar usuários ativos na última semana:', err);
     }
+}
+
+// Diferente do Ranking de Engajamento (progresso na trilha), esse conta
+// quem já acessou a plataforma alguma vez — independe de trilha, então
+// mostra escola que acabou de entrar e já tem estudante logando, mesmo
+// que ninguém ali tenha começado o conteúdo da trilha ainda.
+function renderizarGraficoAtivosEscola(ranking) {
+    alternarEstadoVazio('cAtivosEscola', ranking.length > 0);
+    if (chartAtivosEscola) { chartAtivosEscola.destroy(); chartAtivosEscola = null; }
+    if (!ranking.length) return;
+
+    chartAtivosEscola = new Chart(document.getElementById('cAtivosEscola'), {
+        type: 'bar',
+        data: {
+            labels: ranking.map(r => r.escola),
+            datasets: [{
+                label: '% de Estudantes Ativos',
+                data: ranking.map(r => r.ativos_pct),
+                backgroundColor: ranking.map((_, i) => PALETA[i % PALETA.length]),
+                borderRadius: 8,
+                maxBarThickness: 42
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                x: { grid: { display: false } },
+                y: { grid: { color: '#E4E6F0' }, beginAtZero: true, max: 100 }
+            }
+        }
+    });
 }
 
 // A Trilha Pocket (id 43) não tem estrutura de escola na Ludos — só uma
@@ -541,10 +577,12 @@ function aplicarModoTrilha(trilhaId) {
     const ehPocket = trilhaId === '43';
     const cardEscolas = document.getElementById('kpi-card-escolas');
     const secaoRanking = document.getElementById('secao-ranking-escola');
+    const secaoAtivosEscola = document.getElementById('secao-ativos-escola');
     const secaoMapa = document.getElementById('secao-mapa');
     const grid = document.getElementById('graficos-grid-visao');
     if (cardEscolas) cardEscolas.hidden = ehPocket;
     if (secaoRanking) secaoRanking.hidden = ehPocket;
+    if (secaoAtivosEscola) secaoAtivosEscola.hidden = ehPocket;
     if (secaoMapa) secaoMapa.hidden = ehPocket;
     if (grid) grid.classList.toggle('modo-pocket', ehPocket);
 }
