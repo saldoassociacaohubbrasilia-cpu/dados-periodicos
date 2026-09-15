@@ -309,17 +309,27 @@ function renderizarGraficos(dadosEscolas, dadosModulos) {
 }
 
 // --- Renderização da Tabela de Turmas ---
+// Lista completa da última carga do dashboard, guardada à parte pra
+// filtrar por turma/escola no client sem precisar ir de novo na API
+// (mesmo padrão de ALERTAS_ATUAIS/filtrarAlertas logo abaixo).
+let TURMAS_ATUAIS = [];
+
 function renderizarTabelaTurmas(turmas) {
+    TURMAS_ATUAIS = turmas || [];
+    const campoBusca = document.getElementById('busca-turmas');
+    if (campoBusca) campoBusca.value = ''; // troca de filtro superior limpa a busca anterior
+    renderizarLinhasTurmas(TURMAS_ATUAIS, '');
+}
+
+function renderizarLinhasTurmas(turmas, termoBusca) {
     const tbody = document.querySelector('#tabela-turmas tbody');
     tbody.innerHTML = '';
 
     if (!turmas.length) {
-        tbody.innerHTML = `
-            <tr>
-                <td colspan="6">
-                    <div class="empty-state">Nenhuma turma com dado disponível para esse filtro ainda.</div>
-                </td>
-            </tr>`;
+        const mensagem = termoBusca
+            ? 'Nenhuma turma encontrada para essa busca.'
+            : 'Nenhuma turma com dado disponível para esse filtro ainda.';
+        tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state">${escapeHtml(mensagem)}</div></td></tr>`;
         return;
     }
 
@@ -340,6 +350,21 @@ function renderizarTabelaTurmas(turmas) {
         `;
         tbody.appendChild(tr);
     });
+}
+
+// Busca client-side por turma ou escola — mesma normalização (sem
+// acento/maiúscula) usada no filtro de Alertas, pra achar "CEMAB" mesmo
+// digitando "cemab" ou "Itapoa" sem o til.
+function filtrarTurmas() {
+    const termo = normalizarBusca(document.getElementById('busca-turmas').value.trim());
+    if (!termo) {
+        renderizarLinhasTurmas(TURMAS_ATUAIS, '');
+        return;
+    }
+    const filtradas = TURMAS_ATUAIS.filter(t =>
+        normalizarBusca(t.nome).includes(termo) || normalizarBusca(t.escola).includes(termo)
+    );
+    renderizarLinhasTurmas(filtradas, termo);
 }
 
 // --- Sistema de Alertas ---
@@ -750,6 +775,33 @@ function exibirUsuarioLogado() {
         btnSincronizar.hidden = false;
         btnSincronizar.addEventListener('click', sincronizarAgora);
     }
+
+    const btnRelatorioGeral = document.getElementById('btn-relatorio-geral');
+    if (btnRelatorioGeral) {
+        btnRelatorioGeral.addEventListener('click', baixarRelatorioGeral);
+    }
+}
+
+// Baixa um único Excel com todos os alunos de todas as escolas/turmas
+// (respeitando o filtro de trilha/instituição selecionado no topo) —
+// evita ter que abrir turma por turma pra baixar o relatório de cada uma.
+async function baixarRelatorioGeral() {
+    const btn = document.getElementById('btn-relatorio-geral');
+    if (!btn || btn.disabled) return;
+
+    const textoOriginal = btn.querySelector('span').textContent;
+    btn.disabled = true;
+    btn.querySelector('span').textContent = 'Gerando...';
+
+    const { trilha, instituicao } = lerFiltroSelecionado();
+    const params = `instituicao=${encodeURIComponent(instituicao)}&trilha=${encodeURIComponent(trilha)}`;
+    await baixarArquivoAutenticado(
+        `${API_BASE}/turma/relatorio-geral/excel?${params}`,
+        `relatorio-geral-${instituicao}.xlsx`
+    );
+
+    btn.disabled = false;
+    btn.querySelector('span').textContent = textoOriginal;
 }
 
 // Busca os dados mais recentes da Ludos na hora — o endpoint só devolve
@@ -805,6 +857,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const campoBuscaAlertas = document.getElementById('busca-alertas');
     if (campoBuscaAlertas) campoBuscaAlertas.addEventListener('input', filtrarAlertas);
+
+    const campoBuscaTurmas = document.getElementById('busca-turmas');
+    if (campoBuscaTurmas) campoBuscaTurmas.addEventListener('input', filtrarTurmas);
 
     document.querySelectorAll('.btn-grafico-pdf').forEach(btn => {
         btn.addEventListener('click', () => baixarGraficoPDF(btn.dataset.canvas, btn.dataset.titulo));
