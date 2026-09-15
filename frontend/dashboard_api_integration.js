@@ -55,9 +55,28 @@ async function fetchAutenticado(url, options = {}) {
 // consegue mandar o header de autenticação, então busca como blob e
 // aciona o download programaticamente.
 async function baixarArquivoAutenticado(url, nomeArquivo) {
-    const res = await fetchAutenticado(url);
+    let res;
+    try {
+        res = await fetchAutenticado(url);
+    } catch (err) {
+        // fetch rejeitado (sem internet, CORS bloqueado, backend fora do
+        // ar) nunca chega no `!res.ok` abaixo — sem esse catch, o erro
+        // ficava só no console e o usuário via o botão travado sem
+        // nenhum aviso, parecendo que "não fazia nada".
+        console.error('Falha ao baixar arquivo (requisição não completou):', err);
+        alert('Não foi possível baixar o arquivo agora. Verifique sua conexão e tente novamente.');
+        return;
+    }
     if (!res.ok) {
-        alert('Não foi possível baixar o arquivo agora.');
+        let detalhe = '';
+        try {
+            const corpo = await res.json();
+            if (corpo && corpo.detail) detalhe = ` ${corpo.detail}`;
+        } catch {
+            // resposta de erro não veio como JSON — segue sem detalhe.
+        }
+        console.error(`Falha ao baixar arquivo: HTTP ${res.status}.${detalhe}`);
+        alert(`Não foi possível baixar o arquivo agora.${detalhe}`);
         return;
     }
     const blob = await res.blob();
@@ -789,19 +808,25 @@ async function baixarRelatorioGeral() {
     const btn = document.getElementById('btn-relatorio-geral');
     if (!btn || btn.disabled) return;
 
-    const textoOriginal = btn.querySelector('span').textContent;
+    const textoSpan = btn.querySelector('span');
+    const textoOriginal = textoSpan.textContent;
     btn.disabled = true;
-    btn.querySelector('span').textContent = 'Gerando...';
+    textoSpan.textContent = 'Gerando...';
 
-    const { trilha, instituicao } = lerFiltroSelecionado();
-    const params = `instituicao=${encodeURIComponent(instituicao)}&trilha=${encodeURIComponent(trilha)}`;
-    await baixarArquivoAutenticado(
-        `${API_BASE}/turma/relatorio-geral/excel?${params}`,
-        `relatorio-geral-${instituicao}.xlsx`
-    );
-
-    btn.disabled = false;
-    btn.querySelector('span').textContent = textoOriginal;
+    try {
+        const { trilha, instituicao } = lerFiltroSelecionado();
+        const params = `instituicao=${encodeURIComponent(instituicao)}&trilha=${encodeURIComponent(trilha)}`;
+        await baixarArquivoAutenticado(
+            `${API_BASE}/turma/relatorio-geral/excel?${params}`,
+            `relatorio-geral-${instituicao}.xlsx`
+        );
+    } finally {
+        // finally, não só depois do await: se baixarArquivoAutenticado
+        // lançar por algum motivo inesperado, o botão não pode ficar
+        // travado em "Gerando..." pra sempre.
+        btn.disabled = false;
+        textoSpan.textContent = textoOriginal;
+    }
 }
 
 // Busca os dados mais recentes da Ludos na hora — o endpoint só devolve
