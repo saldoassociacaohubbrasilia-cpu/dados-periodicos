@@ -33,14 +33,43 @@ EMPTY_DASHBOARD = {
 }
 
 
-def _latest_date_for_trilha(db: Session, trilha_id: str):
-    """Data do snapshot mais recente PARA ESSA TRILHA especificamente —
-    nunca usar max(snapshot_date) sem filtrar por trilha_id, senão uma
-    trilha processada por último (ex: Pocket depois de Saldo+ na mesma
-    rodada de sync) "esconde" os dados da outra por ter timestamp maior."""
+def _latest_date_for_trilha(db: Session, trilha_id: str, institution: str):
+    """Data do snapshot mais recente PARA ESSA TRILHA E INSTITUIÇÃO
+    específicas — nunca usar max(snapshot_date) sem filtrar por
+    trilha_id nem por institution.
+
+    Motivo 1 (trilha): uma trilha processada por último (ex: Pocket
+    depois de Saldo+ na mesma rodada de sync) "esconde" os dados da
+    outra por ter timestamp maior.
+
+    Motivo 2 (instituição): dentro de rebuild_metrics, o rollup "geral"
+    grava uma linha por institution (todas/secretaria/cvp) todas com o
+    MESMO datetime.now() — mas se aquela rodada de sync for interrompida
+    logo depois (ex: o Render mata o processo pra subir um novo deploy
+    bem na hora em que o "sync de resgate" do scheduler está rodando —
+    ver scheduler.py), só a linha 'geral'/'todas' chega a ser
+    commitada e as linhas de escola/turma/trilha por instituição real
+    (secretaria/cvp) daquela rodada nunca existem. Sem filtrar por
+    institution aqui, esse timestamp mais novo (só de 'todas') vira o
+    "mais recente" pra QUALQUER instituição — inclusive secretaria/cvp,
+    que não têm nenhuma linha nesse timestamp — e o dashboard filtrado
+    por instituição específica volta tudo zerado.
+
+    Isso também acontecia pra institution='todas': o rollup "geral"
+    grava uma linha 'todas' isolada nesse timestamp quebrado, então só
+    filtrar por institution não bastava. Por isso o filtro exige
+    também que exista uma linha scope_type='escola' nesse timestamp:
+    dentro de rebuild_metrics, 'escola' é o último rollup gravado por
+    trilha (depois de geral, módulo e turma), então só sobrevive numa
+    rodada que realmente terminou — nunca num lote interrompido no
+    meio."""
     return db.execute(
         select(func.max(MetricSnapshot.snapshot_date))
-        .where(MetricSnapshot.trilha_id == trilha_id)
+        .where(
+            MetricSnapshot.trilha_id == trilha_id,
+            MetricSnapshot.institution == institution,
+            MetricSnapshot.scope_type == "escola",
+        )
     ).scalar()
 
 
@@ -53,7 +82,7 @@ def get_full_dashboard(instituicao: str = "todas", trilha: str = TRILHA_PADRAO, 
     """
     inst = normalize_institution(instituicao)
 
-    latest_date = _latest_date_for_trilha(db, trilha)
+    latest_date = _latest_date_for_trilha(db, trilha, inst)
     if not latest_date:
         return EMPTY_DASHBOARD
 
@@ -188,7 +217,7 @@ def get_overview(instituicao: str = "todas", trilha: str = TRILHA_PADRAO, db: Se
 @router.get("/trails", response_model=list[TrailShareOut])
 def get_trail_shares(instituicao: str = "todas", trilha: str = TRILHA_PADRAO, db: Session = Depends(get_db)):
     inst = normalize_institution(instituicao)
-    latest_date = _latest_date_for_trilha(db, trilha)
+    latest_date = _latest_date_for_trilha(db, trilha, inst)
     if latest_date is None:
         return []
 
@@ -217,7 +246,7 @@ def get_ranking(instituicao: str = "todas", trilha: str = TRILHA_PADRAO, db: Ses
     Passe ?trilha=43 para ver o ranking da Trilha Pocket.
     """
     inst = normalize_institution(instituicao)
-    latest_date = _latest_date_for_trilha(db, trilha)
+    latest_date = _latest_date_for_trilha(db, trilha, inst)
     if not latest_date:
         return {"ranking": []}
 
