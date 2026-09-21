@@ -144,8 +144,23 @@ class LudosClient:
             data = self._get(path)
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 403:
-                logger.warning("Cota excedida na API (403) em %s. Retornando lista vazia.", path)
-                return []
+                # Diferente de _get_paginated: aqui NÃO existe "progresso
+                # parcial" pra devolver — é uma chamada só. Devolver []
+                # nesse caso (como fazia antes) era ativamente perigoso:
+                # sync_job.py grava esse [] como um RawLudosSnapshot NOVO
+                # (mais recente que o último bom), e rebuild_metrics()
+                # sempre usa o snapshot mais recente de cada endpoint — ou
+                # seja, uma cota estourada silenciosamente MASCARAVA o
+                # último dado bom como se a Ludos tivesse mandado uma lista
+                # vazia de verdade. Foi exatamente isso que zerou
+                # last_access de todo mundo por dias (ver /report/logs:
+                # dois syncs seguidos "sucesso, 0 registros" por causa de
+                # 403, escondendo os 417 registros reais do sync anterior).
+                # Levantando erro aqui, sync_job.py cai no except
+                # LudosAPIError e NUNCA chega a gravar esse RawLudosSnapshot
+                # vazio — o último snapshot bom continua sendo "o mais
+                # recente" até a próxima tentativa realmente funcionar.
+                raise LudosAPIError(f"Cota excedida (403) em {path}.") from exc
             # Qualquer outro erro HTTP vira LudosAPIError (ver mesmo comentário
             # em _get_paginated) para não abortar a sincronização inteira.
             raise LudosAPIError(
