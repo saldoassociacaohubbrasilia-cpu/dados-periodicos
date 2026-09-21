@@ -185,16 +185,24 @@ def get_full_dashboard(instituicao: str = "todas", trilha: str = TRILHA_PADRAO, 
 @router.get("/overview", response_model=OverviewOut)
 def get_overview(instituicao: str = "todas", trilha: str = TRILHA_PADRAO, db: Session = Depends(get_db)):
     inst = normalize_institution(instituicao)
+    # Reaproveita _latest_date_for_trilha (já exige lote completo, com
+    # escola/turma/trilha — ver comentário lá) em vez de pegar o
+    # scope_type='geral' mais recente puro: um lote quebrado no meio de
+    # uma rodada de sync ainda grava uma linha 'geral' isolada (com
+    # inscritos/engajados às vezes até zerados de verdade, quando o
+    # /report/performance daquela rodada também falhou) — sem essa
+    # checagem, /overview devolveria esse número errado em vez de cair
+    # pro último snapshot bom.
+    latest_date = _latest_date_for_trilha(db, trilha, inst)
     latest = db.execute(
         select(MetricSnapshot)
         .where(
             MetricSnapshot.scope_type == "geral",
             MetricSnapshot.institution == inst,
             MetricSnapshot.trilha_id == trilha,
+            MetricSnapshot.snapshot_date == latest_date,
         )
-        .order_by(MetricSnapshot.snapshot_date.desc())
-        .limit(1)
-    ).scalar_one_or_none()
+    ).scalar_one_or_none() if latest_date else None
 
     if latest is None:
         return OverviewOut(

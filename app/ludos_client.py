@@ -213,8 +213,14 @@ class LudosClient:
             )
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 403:
-                logger.warning("Cota excedida na API (403) em /report/play/course (code=%s).", code)
-                return []
+                # Mesmo bug corrigido em _get_single: essa também é uma
+                # chamada única (sem paginação real), então devolver []
+                # aqui não é "progresso parcial" — é mascarar cota
+                # estourada como sync vazio bem-sucedido, sobrescrevendo
+                # o último RawLudosSnapshot bom desse trilha_id em
+                # _sync_play_course (sync_job.py). Levanta erro pra cair
+                # no except LudosAPIError lá e não gravar snapshot nenhum.
+                raise LudosAPIError(f"Cota excedida (403) em /report/play/course (code={code}).") from exc
             raise LudosAPIError(
                 f"{exc.response.status_code} em /report/play/course: {exc.response.text[:300]}"
             ) from exc
