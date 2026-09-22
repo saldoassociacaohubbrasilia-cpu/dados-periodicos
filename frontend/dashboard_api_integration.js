@@ -307,13 +307,19 @@ function renderizarGraficos(dadosEscolas, dadosModulos) {
     }
 
     if (dadosModulos.length) {
+        // Antes só tinha 5 cores fixas pra um número de módulos que pode
+        // passar disso (hoje são 9) — a partir do 6º módulo a fatia ficava
+        // sem cor definida (undefined), quebrando a correspondência entre
+        // legenda e gráfico. PALETA já cicla assim no gráfico de escolas
+        // (i % PALETA.length) — mesmo padrão aqui.
+        const totalModulos = dadosModulos.reduce((soma, m) => soma + m.total_alunos, 0);
         chartTrilhas = new Chart(document.getElementById('cTrilhas'), {
             type: 'doughnut',
             data: {
                 labels: dadosModulos.map(m => m.nome),
                 datasets: [{
                     data: dadosModulos.map(m => m.total_alunos),
-                    backgroundColor: [NAVY, TEAL, PINK, ORANGE, PURPLE],
+                    backgroundColor: dadosModulos.map((_, i) => PALETA[i % PALETA.length]),
                     borderWidth: 2,
                     borderColor: '#FFFFFF'
                 }]
@@ -321,7 +327,41 @@ function renderizarGraficos(dadosEscolas, dadosModulos) {
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
-                plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, padding: 14 } } }
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: {
+                            boxWidth: 10,
+                            padding: 14,
+                            // Legenda só mostrava o nome do módulo — sem
+                            // passar o mouse em cima da fatia não dava pra
+                            // ver quantos estudantes ou qual % cada módulo
+                            // representa. Agora mostra direto, sem precisar
+                            // de hover (importante pro PDF exportado também).
+                            generateLabels(chart) {
+                                return chart.data.labels.map((label, i) => {
+                                    const valor = chart.data.datasets[0].data[i];
+                                    const pct = totalModulos ? Math.round(100 * valor / totalModulos) : 0;
+                                    return {
+                                        text: `${label} — ${valor} (${pct}%)`,
+                                        fillStyle: chart.data.datasets[0].backgroundColor[i],
+                                        strokeStyle: chart.data.datasets[0].borderColor,
+                                        index: i,
+                                    };
+                                });
+                            }
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label(ctx) {
+                                const valor = ctx.parsed;
+                                const pct = totalModulos ? Math.round(100 * valor / totalModulos) : 0;
+                                return `${ctx.label}: ${valor} estudantes (${pct}%)`;
+                            }
+                        }
+                    }
+                }
             }
         });
     }
