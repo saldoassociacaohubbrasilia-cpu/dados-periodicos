@@ -167,6 +167,12 @@
            a linha inteira em vez de ficar espremido numa coluna só. */
         .graficos-grid.modo-pocket { grid-template-columns: 1fr; }
         canvas { max-height: 280px; }
+        /* #cTrilhas (Distribuição por Módulo) precisa de mais espaço que
+           os outros: a legenda agora mostra valor + % em cada item (ver
+           renderizarGraficos em dashboard_api_integration.js), e com até
+           9 módulos isso não cabe nos 280px padrão — os últimos itens
+           ficavam cortados, fora da área visível do canvas. */
+        #cTrilhas { max-height: 450px; }
 
         /* ---------- Caixas de contexto ---------- */
         .caixa { border-radius: var(--radius-md); padding: 11px 15px; font-size: 12.5px; line-height: 1.55; margin-top: 12px; }
