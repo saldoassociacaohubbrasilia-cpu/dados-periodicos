@@ -127,7 +127,28 @@ function baixarGraficoPDF(canvasId, titulo) {
 
     const imgWidth = pageWidth - margin * 2;
     const imgHeight = imgWidth * (canvas.height / canvas.width);
-    doc.addImage(canvas.toDataURL('image/png', 1.0), 'PNG', margin, 100, imgWidth, imgHeight);
+    const itensLegenda = [...document.querySelectorAll(`#legenda-${canvasId} li`)];
+    if (itensLegenda.length) {
+        // Gráfico com legenda em HTML (Distribuição por Módulo): rosca à
+        // esquerda, lista de módulos à direita — senão o PDF sairia só
+        // com a rosca, sem dizer qual cor é qual módulo.
+        const alturaImg = 360;
+        const larguraImg = alturaImg * (canvas.width / canvas.height);
+        doc.addImage(canvas.toDataURL('image/png', 1.0), 'PNG', margin, 100, larguraImg, alturaImg);
+        const xLegenda = margin + larguraImg + 30;
+        doc.setFontSize(9);
+        itensLegenda.forEach((li, i) => {
+            const y = 110 + i * 22;
+            doc.setFillColor(li.dataset.cor);
+            doc.rect(xLegenda, y - 7, 8, 8, 'F');
+            doc.setTextColor(27, 33, 64);
+            doc.text(li.querySelector('.legenda-modulo-nome').textContent, xLegenda + 14, y);
+            doc.setTextColor(107, 113, 146);
+            doc.text(li.querySelector('.legenda-modulo-valor').textContent, pageWidth - margin, y, { align: 'right' });
+        });
+    } else {
+        doc.addImage(canvas.toDataURL('image/png', 1.0), 'PNG', margin, 100, imgWidth, imgHeight);
+    }
 
     const slug = titulo.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
     doc.save(`${slug}-${agora.toISOString().slice(0, 10)}.pdf`);
@@ -306,20 +327,24 @@ function renderizarGraficos(dadosEscolas, dadosModulos) {
         });
     }
 
+    const legendaModulos = document.getElementById('legenda-cTrilhas');
+    if (legendaModulos) legendaModulos.innerHTML = '';
+
     if (dadosModulos.length) {
-        // Antes só tinha 5 cores fixas pra um número de módulos que pode
-        // passar disso (hoje são 9) — a partir do 6º módulo a fatia ficava
-        // sem cor definida (undefined), quebrando a correspondência entre
-        // legenda e gráfico. PALETA já cicla assim no gráfico de escolas
-        // (i % PALETA.length) — mesmo padrão aqui.
-        const totalModulos = dadosModulos.reduce((soma, m) => soma + m.total_alunos, 0);
+        // Ordem da trilha (1, 2, ... 20), não por quantidade — o nome já
+        // vem com a posição na frente ("3. Dinheiro, e agora?").
+        const posicao = m => parseInt(m.nome, 10) || Number.MAX_SAFE_INTEGER;
+        const modulos = [...dadosModulos].sort((a, b) => posicao(a) - posicao(b));
+        const totalModulos = modulos.reduce((soma, m) => soma + m.total_alunos, 0);
+        const cores = modulos.map((_, i) => PALETA[i % PALETA.length]);
+
         chartTrilhas = new Chart(document.getElementById('cTrilhas'), {
             type: 'doughnut',
             data: {
-                labels: dadosModulos.map(m => m.nome),
+                labels: modulos.map(m => m.nome),
                 datasets: [{
-                    data: dadosModulos.map(m => m.total_alunos),
-                    backgroundColor: dadosModulos.map((_, i) => PALETA[i % PALETA.length]),
+                    data: modulos.map(m => m.total_alunos),
+                    backgroundColor: cores,
                     borderWidth: 2,
                     borderColor: '#FFFFFF'
                 }]
@@ -328,43 +353,38 @@ function renderizarGraficos(dadosEscolas, dadosModulos) {
                 responsive: true,
                 maintainAspectRatio: false,
                 plugins: {
-                    legend: {
-                        position: 'bottom',
-                        labels: {
-                            boxWidth: 10,
-                            padding: 14,
-                            // Legenda só mostrava o nome do módulo — sem
-                            // passar o mouse em cima da fatia não dava pra
-                            // ver quantos estudantes ou qual % cada módulo
-                            // representa. Agora mostra direto, sem precisar
-                            // de hover (importante pro PDF exportado também).
-                            generateLabels(chart) {
-                                return chart.data.labels.map((label, i) => {
-                                    const valor = chart.data.datasets[0].data[i];
-                                    const pct = totalModulos ? Math.round(100 * valor / totalModulos) : 0;
-                                    return {
-                                        text: `${label} — ${valor} (${pct}%)`,
-                                        fillStyle: chart.data.datasets[0].backgroundColor[i],
-                                        strokeStyle: chart.data.datasets[0].borderColor,
-                                        index: i,
-                                    };
-                                });
-                            }
-                        }
-                    },
+                    // Legenda em HTML (legenda-cTrilhas) em vez da do
+                    // Chart.js: com os 20 módulos ela não cabia na altura
+                    // do canvas e os últimos itens ficavam cortados.
+                    legend: { display: false },
                     tooltip: {
                         callbacks: {
                             label(ctx) {
-                                const valor = ctx.parsed;
-                                const pct = totalModulos ? Math.round(100 * valor / totalModulos) : 0;
-                                return `${ctx.label}: ${valor} estudantes (${pct}%)`;
+                                return `${ctx.label}: ${ctx.parsed} estudantes (${pctModulo(ctx.parsed, totalModulos)})`;
                             }
                         }
                     }
                 }
             }
         });
+
+        if (legendaModulos) {
+            legendaModulos.innerHTML = modulos.map((m, i) => `
+                <li data-cor="${cores[i]}">
+                    <span class="legend-dot" style="background: ${cores[i]}"></span>
+                    <span class="legenda-modulo-nome">${escapeHtml(m.nome)}</span>
+                    <span class="legenda-modulo-valor">${m.total_alunos} · ${pctModulo(m.total_alunos, totalModulos)}</span>
+                </li>`).join('');
+        }
     }
+}
+
+// % de um módulo sobre o total de estudantes com módulo — "<1%" em vez de
+// "0%" quando tem alguém, pra não parecer que o módulo está vazio.
+function pctModulo(valor, total) {
+    if (!total || !valor) return '0%';
+    const pct = 100 * valor / total;
+    return pct < 1 ? '<1%' : `${Math.round(pct)}%`;
 }
 
 // --- Renderização da Tabela de Turmas ---

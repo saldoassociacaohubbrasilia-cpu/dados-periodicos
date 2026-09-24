@@ -167,12 +167,14 @@
            a linha inteira em vez de ficar espremido numa coluna só. */
         .graficos-grid.modo-pocket { grid-template-columns: 1fr; }
         canvas { max-height: 280px; }
-        /* #cTrilhas (Distribuição por Módulo) precisa de mais espaço que
-           os outros: a legenda agora mostra valor + % em cada item (ver
-           renderizarGraficos em dashboard_api_integration.js), e com até
-           9 módulos isso não cabe nos 280px padrão — os últimos itens
-           ficavam cortados, fora da área visível do canvas. */
-        #cTrilhas { max-height: 450px; }
+        /* Legenda do gráfico de módulos em HTML (ver renderizarGraficos em
+           dashboard_api_integration.js) — cresce com a lista, sem cortar. */
+        .legenda-modulos { list-style: none; margin: 14px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+        .legenda-modulos li { display: flex; align-items: center; gap: 8px; padding: 3px 0; border-bottom: 1px solid var(--border); }
+        .legenda-modulos li:last-child { border-bottom: none; }
+        .legenda-modulos .legend-dot { flex-shrink: 0; border-radius: 3px; }
+        .legenda-modulo-nome { flex: 1; color: var(--ink); }
+        .legenda-modulo-valor { color: var(--muted); font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
 
         /* ---------- Caixas de contexto ---------- */
         .caixa { border-radius: var(--radius-md); padding: 11px 15px; font-size: 12.5px; line-height: 1.55; margin-top: 12px; }
@@ -425,6 +427,7 @@
                 </div>
                 <p class="secao-calc">Cálculo: módulo mais avançado de cada estudante, a partir das atividades concluídas (dado real, não estimado)</p>
                 <canvas id="cTrilhas"></canvas>
+                <ul class="legenda-modulos" id="legenda-cTrilhas"></ul>
                 <div class="empty-state chart-empty" id="empty-cTrilhas" hidden>
                     Nenhum módulo com dado disponível para esse filtro ainda.
                 </div>

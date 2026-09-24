@@ -353,6 +353,7 @@ def _process_trilha(
     db: Session, performance: list, trilha_id: str, trilha_nome: str,
     player_extra: dict, students_by_id: dict, school_turma_cache: dict,
     module_by_student: dict[str, str], grupos_da_trilha: set[str] | None,
+    todos_modulos: list[str] | None = None,
 ) -> None:
     """Processa uma trilha (CourseId) inteira: filtra o /report/performance
     pra esse curso, calcula os rollups (geral, módulo, escola/turma) e
@@ -366,7 +367,12 @@ def _process_trilha(
     "inscrito" em QUALQUER trilha (ex: a Trilha Pocket, que só tem uma
     turma de teste associada na Ludos, aparecia com as 22 turmas da
     Secretaria inteiras). None (curso ainda não sincronizado em
-    /report/courses) = sem filtro, mantém o comportamento anterior."""
+    /report/courses) = sem filtro, mantém o comportamento anterior.
+
+    `todos_modulos`: nomes ("1. Boas-vindas...") de todos os módulos do
+    curso, na ordem — entram no rollup por módulo mesmo com 0 estudantes,
+    pra o gráfico de distribuição mostrar a trilha inteira (os 20 módulos)
+    e não só os que já têm alguém."""
     inscritos_ids: dict[str, set] = defaultdict(set)
     engaged_ids: dict[str, set] = defaultdict(set)
     completed_ids: dict[str, set] = defaultdict(set)
@@ -536,6 +542,9 @@ def _process_trilha(
         ))
 
     # --- Rollup por módulo (por instituição + 'todas') ---
+    for scope in inscritos_ids:
+        for mod_name in todos_modulos or []:
+            module_counts[scope].setdefault(mod_name, 0)
     for scope, counts in module_counts.items():
         total_com_modulo = sum(counts.values()) or 1
         for mod_name, count in counts.items():
@@ -727,6 +736,7 @@ def rebuild_metrics(db: Session) -> None:
             player_extra, students_by_id, school_turma_cache,
             module_por_aluno_por_trilha.get(trilha_id, {}),
             grupos_por_trilha.get(trilha_id, set()) if grupos_por_trilha is not None else None,
+            [nome for _, nome in sorted(module_positions_por_trilha.get(trilha_id, {}).values())],
         )
 
     _limpar_snapshots_antigos(db)
