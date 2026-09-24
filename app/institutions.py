@@ -12,9 +12,42 @@ A comparação ignora maiúsculas/minúsculas e espaços nas pontas, então
 "CVP - Turma A" e "cvp - turma a" batem com a mesma entrada.
 """
 
-# Preencha aqui: "GroupName exatamente como vem da Ludos" -> "cvp"
+# Cursos (CourseId da Ludos) que o dashboard acompanha, e a categoria de
+# cada um. A categoria vem do CURSO, não do nome do grupo: é o curso que a
+# Ludos separa de forma confiável (CVP 46 e ONGs são cursos próprios lá).
+#   - usa_escola: SEEDF organiza Escola → Turma; CVP não tem escola — o
+#     nível simplesmente não existe (sem KPI de escolas, mapa ou ranking).
+# Curso novo do CVP = uma entrada nova aqui, sem mudar mais nada.
+CURSOS: dict[str, dict] = {
+    "41": {"nome": "Trilha Saldo+", "categoria": "secretaria", "usa_escola": True},
+    "43": {"nome": "Trilha Pocket", "categoria": "secretaria", "usa_escola": True},
+    "45": {"nome": "CVP 46", "categoria": "cvp", "usa_escola": False},
+    "46": {"nome": "ONGs", "categoria": "cvp", "usa_escola": False},
+}
+
+
+def curso_usa_escola(course_id: str) -> bool:
+    return CURSOS.get(str(course_id), {}).get("usa_escola", True)
+
+
+# Contas de teste da equipe (login na Ludos, sem diferenciar maiúsculas) —
+# ficam fora de todos os números, em qualquer categoria. "Danielle" é a
+# conta usada pra conferir o painel do aluno (está em turma da SEEDF, na
+# Equipe Gestão e no CVP - 46 ao mesmo tempo).
+CONTAS_TESTE: set[str] = {
+    "danielle",
+}
+
+
+def is_conta_teste(login: str | None) -> bool:
+    return bool(login) and str(login).strip().lower() in CONTAS_TESTE
+
+
+# Normalmente não precisa preencher: a categoria de cada grupo é deduzida
+# de /report/courses (ver montar_categorias_por_grupo). Use só pra forçar
+# um grupo específico: "GroupName exatamente como vem da Ludos" -> "cvp".
 GROUPNAME_TO_INSTITUTION: dict[str, str] = {
-    # "CVP - Turma Exemplo": "cvp",
+    "CVP - 46": "cvp",
 }
 
 # Coordenadas de cada ESCOLA REAL (a chave é o nome que sai de
@@ -110,12 +143,39 @@ def get_school_display_name(group_name: str | None) -> str:
     return _NORMALIZED_SCHOOL_MAP.get(nome.lower(), nome)
 
 
-def get_institution(group_name: str | None) -> str:
+def montar_categorias_por_grupo(courses_payload: list | None) -> dict[str, str]:
+    """{groupName normalizado: 'secretaria' | 'cvp'} a partir de
+    /report/courses. Um grupo vinculado a algum curso da SEEDF é SEEDF;
+    vinculado só a cursos do CVP, é CVP — é assim que um grupo novo de ONG
+    entra sozinho, sem cadastro manual. A ordem importa: na Ludos as
+    turmas da SEEDF também estão vinculadas aos cursos 45/46, e continuam
+    sendo SEEDF. GROUPNAME_TO_INSTITUTION tem a palavra final."""
+    por_grupo: dict[str, set[str]] = {}
+    for course in courses_payload or []:
+        categoria = CURSOS.get(str(course.get("courseId")), {}).get("categoria")
+        if not categoria:
+            continue
+        for g in course.get("groups") or []:
+            nome = str(g.get("groupName") or "").strip().lower()
+            if nome:
+                por_grupo.setdefault(nome, set()).add(categoria)
+    categorias = {
+        nome: "secretaria" if "secretaria" in cats else "cvp"
+        for nome, cats in por_grupo.items()
+    }
+    categorias.update(_NORMALIZED_MAP)
+    return categorias
+
+
+def get_institution(group_name: str | None, categorias: dict[str, str] | None = None) -> str:
     """Retorna 'cvp' ou 'secretaria' para um GroupName. Nunca retorna 'todas'
-    aqui — 'todas' é só um agregado calculado em cima dessas duas."""
+    aqui — 'todas' é só um agregado calculado em cima dessas duas.
+    `categorias`: resultado de montar_categorias_por_grupo; sem ele, só
+    vale o GROUPNAME_TO_INSTITUTION manual."""
     if not group_name:
         return "secretaria"
-    return _NORMALIZED_MAP.get(str(group_name).strip().lower(), "secretaria")
+    nome = str(group_name).strip().lower()
+    return (categorias or _NORMALIZED_MAP).get(nome, "secretaria")
 
 
 def normalize_institution(instituicao: str | None) -> str:

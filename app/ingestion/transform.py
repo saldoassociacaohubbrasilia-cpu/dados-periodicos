@@ -7,17 +7,18 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models import RawLudosSnapshot, Student, School, Turma, StudentProgress, MetricSnapshot
-from app.institutions import get_institution, is_excluded_group, get_school_display_name
+from app.institutions import (
+    CURSOS, curso_usa_escola, get_institution, get_school_display_name,
+    is_conta_teste, is_excluded_group, montar_categorias_por_grupo,
+)
 
 logger = logging.getLogger("transform")
 
 # Trilhas acompanhadas pelo dashboard. Chave = CourseId na Ludos,
-# valor = nome de exibição. Pra adicionar uma trilha nova no futuro,
-# basta incluir aqui — rebuild_metrics já processa todas sozinho.
-TRILHAS: dict[str, str] = {
-    "41": "Trilha Saldo+",
-    "43": "Trilha Pocket",
-}
+# valor = nome de exibição. Vem de app/institutions.py:CURSOS (que também
+# guarda a categoria de cada curso) — pra adicionar uma trilha nova, inclua
+# lá; rebuild_metrics já processa todas sozinho.
+TRILHAS: dict[str, str] = {course_id: c["nome"] for course_id, c in CURSOS.items()}
 
 # Sistema de Alertas: aluno entra em alerta se nunca fez login
 # (last_access nulo) OU se já passaram mais de DIAS_LIMITE_INATIVIDADE
@@ -34,8 +35,11 @@ DIAS_LIMITE_INATIVIDADE = 10
 # (ninguém nunca estava nele, porque era na real o módulo 4). Cada par é
 # trocado de posição relativa antes de numerar; módulos não listados
 # aqui mantêm a ordem que a API já devolve.
+# Os cursos do CVP (45 e 46) são cópias da Saldo+ e vêm com a mesma troca.
 CORRECAO_ORDEM_MODULOS: dict[str, list[tuple[int, int]]] = {
     "41": [(44, 45)],
+    "45": [(107, 108)],
+    "46": [(127, 128)],
 }
 
 
@@ -153,7 +157,9 @@ def _build_trilha_groups(courses_payload: list) -> dict[str, set[str]]:
     return grupos
 
 
-def _upsert_students(db: Session, players: list, school_turma_cache: dict) -> tuple[dict[str, Student], dict[str, dict]]:
+def _upsert_students(
+    db: Session, players: list, school_turma_cache: dict, categorias: dict[str, str],
+) -> tuple[dict[str, Student], dict[str, dict]]:
     """Cria/atualiza os alunos a partir de /report/players. Devolve dois
     dicionários indexados por external_id (playerId):
     - {external_id: Student} já com .id definido, pra não reconsultar o
@@ -192,22 +198,48 @@ def _upsert_students(db: Session, players: list, school_turma_cache: dict) -> tu
         student.account_status = _field(p, "status", default=None)
         student.pontos = _field(p, "score", default=None)
         student.moedas = _field(p, "coins", default=None)
-        # Sem managerId nem managerLogin -> não tem professor responsável
-        # acima -> é conta de professor/gestor/staff, não aluno de verdade.
         manager_id = _field(p, "managerId", default=None)
         manager_login = _field(p, "managerLogin", default=None)
-        student.is_staff = not manager_id and not manager_login
         external_ids.append(external_id)
 
-        grupos = _field(p, "groups", default=[]) or []
-        primeiro_grupo = grupos[0] if grupos and grupos[0].get("groupName") else {}
-        group_name = str(primeiro_grupo["groupName"]).strip() if primeiro_grupo else None
-        group_id = primeiro_grupo.get("groupId")
-        integration_code = primeiro_grupo.get("integrationCode")
+        grupos = [
+            {
+                "group_name": str(g["groupName"]).strip(),
+                "group_id": g.get("groupId"),
+                "integration_code": g.get("integrationCode"),
+            }
+            for g in (_field(p, "groups", default=[]) or [])
+            if g.get("groupName")
+        ]
+        eh_cvp = any(get_institution(g["group_name"], categorias) == "cvp" for g in grupos)
+        # Quem é "equipe" (fica fora de todos os números):
+        #   - conta de teste da equipe (CONTAS_TESTE), em qualquer categoria;
+        #   - SEEDF: sem managerId nem managerLogin -> não tem professor
+        #     responsável acima -> é professor/gestor/staff, não aluno.
+        # No CVP não existe professor responsável: não ter gestor é o normal
+        # e não diz nada — usuário de grupo do CVP conta como usuário.
+        if is_conta_teste(login):
+            student.is_staff = True
+        elif eh_cvp:
+            student.is_staff = False
+        else:
+            student.is_staff = not manager_id and not manager_login
+
+        # Grupo "principal" (o que fica em Student.turma_id): o primeiro que
+        # não seja grupo de teste/gestão. O rollup de cada curso escolhe o
+        # grupo daquele curso por conta própria (ver _grupo_do_curso).
+        primeiro_grupo = next(
+            (g for g in grupos if not is_excluded_group(g["group_name"])),
+            grupos[0] if grupos else {},
+        )
+        group_name = primeiro_grupo.get("group_name")
+        group_id = primeiro_grupo.get("group_id")
+        integration_code = primeiro_grupo.get("integration_code")
         pontuacao = _field(p, "coins", "score", "points", "Pontuacao", default=None)
         extra_by_id[external_id] = {
             "group_name": group_name, "pontuacao": pontuacao,
             "group_id": group_id, "integration_code": integration_code,
+            "grupos": grupos,
         }
 
         # Vincula escola/turma já aqui — mesmo que esse aluno nunca
@@ -349,11 +381,43 @@ def _upsert_progress(
             row.completed_at = completed_at or now
 
 
+def _grupo_do_curso(
+    extra: dict, grupos_da_trilha: set[str] | None, categoria_curso: str,
+    categorias: dict[str, str], aceita_principal: bool,
+) -> dict | None:
+    """Em qual grupo (turma) esse usuário conta pra esse curso — ou None
+    se ele não conta nele. Usuário em vários grupos (ex: SEEDF + CVP)
+    conta no grupo que pertence àquele curso, não no primeiro da lista.
+
+    Um grupo só vale pra um curso da MESMA categoria: na Ludos as turmas
+    da SEEDF também estão vinculadas aos cursos do CVP (45/46), e sem
+    essa trava todo aluno da SEEDF viraria inscrito do CVP.
+
+    `aceita_principal`: se nenhum grupo do usuário está vinculado ao curso,
+    cai no grupo principal (ou "Sem Turma") — é como o laço de performance
+    sempre funcionou (quem jogou o curso conta, mesmo se a turma dele não
+    estiver vinculada lá), mantido igual pra não mudar os números da SEEDF."""
+    for g in extra.get("grupos") or []:
+        nome = g["group_name"]
+        if is_excluded_group(nome) or get_institution(nome, categorias) != categoria_curso:
+            continue
+        if grupos_da_trilha is None or nome.lower() in grupos_da_trilha:
+            return g
+    if not aceita_principal:
+        return None
+    nome = str(extra.get("group_name") or "Sem Turma")
+    if is_excluded_group(nome) or get_institution(nome, categorias) != categoria_curso:
+        return None
+    return {"group_name": nome, "group_id": extra.get("group_id"),
+            "integration_code": extra.get("integration_code")}
+
+
 def _process_trilha(
     db: Session, performance: list, trilha_id: str, trilha_nome: str,
     player_extra: dict, students_by_id: dict, school_turma_cache: dict,
     module_by_student: dict[str, str], grupos_da_trilha: set[str] | None,
     todos_modulos: list[str] | None = None,
+    categorias: dict[str, str] | None = None,
 ) -> None:
     """Processa uma trilha (CourseId) inteira: filtra o /report/performance
     pra esse curso, calcula os rollups (geral, módulo, escola/turma) e
@@ -372,7 +436,13 @@ def _process_trilha(
     `todos_modulos`: nomes ("1. Boas-vindas...") de todos os módulos do
     curso, na ordem — entram no rollup por módulo mesmo com 0 estudantes,
     pra o gráfico de distribuição mostrar a trilha inteira (os 20 módulos)
-    e não só os que já têm alguém."""
+    e não só os que já têm alguém.
+
+    `categorias`: categoria de cada grupo (montar_categorias_por_grupo).
+    A categoria do curso (CURSOS) decide em que instituição tudo entra."""
+    categorias = categorias or {}
+    categoria_curso = CURSOS.get(trilha_id, {}).get("categoria", "secretaria")
+    usa_escola = curso_usa_escola(trilha_id)
     inscritos_ids: dict[str, set] = defaultdict(set)
     engaged_ids: dict[str, set] = defaultdict(set)
     completed_ids: dict[str, set] = defaultdict(set)
@@ -415,19 +485,24 @@ def _process_trilha(
             student_account.account_status == "BLOCKED" or student_account.is_staff
         ):
             continue
-        group_name = str(extra.get("group_name") or "Sem Turma")
-        if is_excluded_group(group_name):
+        # Sem vínculo de curso conhecido (courses ainda não sincronizado),
+        # vale o grupo principal, como antes.
+        grupo = _grupo_do_curso(
+            extra, grupos_da_trilha, categoria_curso, categorias,
+            aceita_principal=grupos_da_trilha is None,
+        )
+        if grupo is None:
             continue
-        if grupos_da_trilha is not None and group_name.strip().lower() not in grupos_da_trilha:
-            continue
-        inst = get_institution(group_name)
+        group_name = grupo["group_name"]
+        inst = categoria_curso
         for scope in (inst, "todas"):
             inscritos_ids[scope].add(external_id)
         turma_stats[group_name]["inscritos"].add(external_id)
         # "Sem Turma" (aluno real, mas ainda sem turma cadastrada na Ludos)
         # não é uma escola — não entra no KPI "Total de Escolas" nem no
         # mapa/ranking. O aluno continua contando nos totais gerais acima.
-        if group_name != "Sem Turma":
+        # Curso sem escola (CVP) não tem esse nível.
+        if usa_escola and group_name != "Sem Turma":
             escola_nome = get_school_display_name(group_name)
             escola_stats[escola_nome]["inscritos"].add(external_id)
             escola_institutions[escola_nome].add(inst)
@@ -455,10 +530,13 @@ def _process_trilha(
         # Turma (GroupName) e pontuação não vêm no /report/performance — a
         # Ludos só manda isso no /report/players, casado pelo mesmo playerId.
         extra = player_extra.get(external_id, {})
-        group_name = str(extra.get("group_name") or "Sem Turma")
-        if is_excluded_group(group_name):
+        grupo = _grupo_do_curso(
+            extra, grupos_da_trilha, categoria_curso, categorias, aceita_principal=True,
+        )
+        if grupo is None:
             continue
-        inst = get_institution(group_name)
+        group_name = grupo["group_name"]
+        inst = categoria_curso
 
         progress = float(_field(perf, "progression", "progress", "progress_pct", "Complete", default=0) or 0)
         # Dado real de /report/play/course (ver rebuild_metrics) — None
@@ -489,7 +567,7 @@ def _process_trilha(
                 completed_ids[scope].add(external_id)
 
         gs_alvo = [turma_stats[group_name]]
-        if group_name != "Sem Turma":
+        if usa_escola and group_name != "Sem Turma":
             escola_nome = get_school_display_name(group_name)
             escola_institutions[escola_nome].add(inst)
             gs_alvo.append(escola_stats[escola_nome])
@@ -506,7 +584,7 @@ def _process_trilha(
         # Vincula o aluno à escola/turma e grava o progresso individual dele
         school, turma = _get_or_create_school_turma(
             db, school_turma_cache, group_name,
-            extra.get("group_id"), extra.get("integration_code"),
+            grupo.get("group_id"), grupo.get("integration_code"),
         )
         student = students_by_id.get(external_id)
         if student is not None:
@@ -566,7 +644,7 @@ def _process_trilha(
     # --- Rollup por turma (instituição real da turma + 'todas') — uma
     # linha por GroupName exato, usada na tabela de turmas do dashboard. ---
     for group_name, gs in turma_stats.items():
-        inst = get_institution(group_name)
+        inst = categoria_curso
         n_inscritos = len(gs["inscritos"])
         n_engajados = len(gs["engajados"])
         n_concluintes = len(gs["concluintes"])
@@ -692,6 +770,7 @@ def rebuild_metrics(db: Session) -> None:
     # nesse caso _process_trilha não filtra por turma (comportamento antigo),
     # em vez de zerar tudo por falta desse dado auxiliar.
     grupos_por_trilha = _build_trilha_groups(courses) if courses else None
+    categorias = montar_categorias_por_grupo(courses)
     module_por_aluno_por_trilha = {
         trilha_id: _build_module_by_student(
             _latest_payload(db, f"/report/play/course/{trilha_id}") or [],
@@ -705,7 +784,7 @@ def rebuild_metrics(db: Session) -> None:
     # pro laço de cada trilha depois — evita School/Turma duplicada pro
     # mesmo GroupName.
     school_turma_cache: dict = {}
-    students_by_id, player_extra = _upsert_students(db, players, school_turma_cache)
+    students_by_id, player_extra = _upsert_students(db, players, school_turma_cache, categorias)
 
     # Se /report/players veio cortado pela cota da Ludos nesta rodada (ver
     # LudosClient._get_single), students_by_id só cobre quem apareceu no
@@ -737,10 +816,18 @@ def rebuild_metrics(db: Session) -> None:
             module_por_aluno_por_trilha.get(trilha_id, {}),
             grupos_por_trilha.get(trilha_id, set()) if grupos_por_trilha is not None else None,
             [nome for _, nome in sorted(module_positions_por_trilha.get(trilha_id, {}).values())],
+            categorias,
         )
 
     _limpar_snapshots_antigos(db)
     db.commit()
+
+
+def carregar_categorias_por_grupo(db: Session) -> dict[str, str]:
+    """Categoria de cada grupo a partir do último /report/courses — pros
+    endpoints que classificam aluno/turma fora do rebuild (alertas,
+    usuários ativos, relatórios)."""
+    return montar_categorias_por_grupo(_latest_payload(db, "/report/courses") or [])
 
 
 def _limpar_snapshots_antigos(db: Session) -> None:

@@ -9,8 +9,12 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import Turma, Student, StudentProgress
-from app.ingestion.transform import calcular_alerta_aluno, TRILHAS
-from app.institutions import get_school_display_name, get_institution, is_excluded_group, normalize_institution
+from app.ingestion.transform import (
+    _build_trilha_groups, _latest_payload, calcular_alerta_aluno, carregar_categorias_por_grupo, TRILHAS,
+)
+from app.institutions import (
+    curso_usa_escola, get_school_display_name, get_institution, is_excluded_group, normalize_institution,
+)
 from app.auth import get_current_user
 
 router = APIRouter(prefix="/api/v1/turma", tags=["relatorio-turma"], dependencies=[Depends(get_current_user)])
@@ -113,9 +117,12 @@ def _buscar_relatorio_turma(db: Session, nome: str, trilha: str = TRILHA_PADRAO)
     for posicao, linha in enumerate(linhas, start=1):
         linha["posicao_na_turma"] = posicao
 
+    categorias = carregar_categorias_por_grupo(db)
+    eh_cvp = get_institution(turma.name, categorias) == "cvp"
     return {
         "turma": turma.name,
-        "escola": get_school_display_name(turma.name),
+        # CVP não tem escola — None, nunca o nome do grupo no lugar.
+        "escola": None if eh_cvp else get_school_display_name(turma.name),
         "trilha": TRILHAS.get(trilha, trilha),
         "total_alunos": len(linhas),
         "engajados": sum(1 for l in linhas if l["progresso_pct"] > 0),
@@ -135,8 +142,14 @@ def _buscar_relatorio_geral(db: Session, trilha: str, instituicao: str) -> dict:
 
     turmas = db.execute(select(Turma)).scalars().all()
     turmas = [t for t in turmas if not is_excluded_group(t.name)]
+    categorias = carregar_categorias_por_grupo(db)
     if inst_filtro != "todas":
-        turmas = [t for t in turmas if get_institution(t.name) == inst_filtro]
+        turmas = [t for t in turmas if get_institution(t.name, categorias) == inst_filtro]
+    # Curso sem escola (CVP 46, ONGs): só os grupos daquele curso — senão o
+    # relatório de ONGs listaria também o grupo do CVP 46, e vice-versa.
+    if not curso_usa_escola(trilha):
+        grupos_curso = _build_trilha_groups(_latest_payload(db, "/report/courses") or []).get(trilha, set())
+        turmas = [t for t in turmas if t.name.strip().lower() in grupos_curso]
     turmas.sort(key=lambda t: (get_school_display_name(t.name), t.name))
 
     turma_ids = [t.id for t in turmas]
@@ -163,7 +176,11 @@ def _buscar_relatorio_geral(db: Session, trilha: str, instituicao: str) -> dict:
     resumo_por_escola: dict[str, dict] = {}
 
     for turma in turmas:
-        escola = get_school_display_name(turma.name)
+        # CVP não tem escola: a coluna fica vazia e o resumo agrupa por
+        # grupo/turma (chave de agrupamento separada da coluna exibida).
+        eh_cvp = get_institution(turma.name, categorias) == "cvp"
+        escola = None if eh_cvp else get_school_display_name(turma.name)
+        chave_resumo = turma.name if eh_cvp else escola
 
         linhas_turma = []
         for aluno in alunos_por_turma.get(turma.id, []):
@@ -200,7 +217,7 @@ def _buscar_relatorio_geral(db: Session, trilha: str, instituicao: str) -> dict:
 
         linhas_geral.extend(linhas_turma)
 
-        resumo = resumo_por_escola.setdefault(escola, {
+        resumo = resumo_por_escola.setdefault(chave_resumo, {
             "total_alunos": 0, "engajados": 0, "concluintes": 0, "em_alerta": 0,
         })
         resumo["total_alunos"] += len(linhas_turma)
@@ -224,6 +241,8 @@ def _buscar_relatorio_geral(db: Session, trilha: str, instituicao: str) -> dict:
         "instituicao": inst_filtro,
         "trilha": TRILHAS.get(trilha, trilha),
         "total_escolas": len(resumo_escolas),
+        # Curso do CVP: o resumo é por grupo e não existe coluna de escola.
+        "usa_escola": curso_usa_escola(trilha),
         "total_turmas": len(turmas),
         "total_alunos": len(linhas_geral),
         "alunos": linhas_geral,
@@ -421,13 +440,15 @@ def get_relatorio_geral_excel(instituicao: str = "todas", trilha: str = TRILHA_P
         raise HTTPException(status_code=404, detail="Nenhum aluno encontrado para esse filtro.")
 
     wb = Workbook()
+    usa_escola = dados["usa_escola"]
+    rotulo, rotulo_plural = ("Escola", "escolas") if usa_escola else ("Grupo", "grupos")
 
-    # --- Aba 1: Resumo por Escola ---
+    # --- Aba 1: Resumo por Escola (ou por Grupo, no CVP) ---
     ws_resumo = wb.active
-    ws_resumo.title = "Resumo por Escola"
+    ws_resumo.title = f"Resumo por {rotulo}"
 
     ws_resumo.merge_cells("A1:F1")
-    ws_resumo["A1"] = f"{dados['trilha']} — Relatório Geral ({dados['total_escolas']} escolas)"
+    ws_resumo["A1"] = f"{dados['trilha']} — Relatório Geral ({dados['total_escolas']} {rotulo_plural})"
     ws_resumo["A1"].font = Font(name="Arial", size=14, bold=True, color="FFFFFF")
     ws_resumo["A1"].fill = PatternFill("solid", fgColor=NAVY.lstrip("#"))
     ws_resumo["A1"].alignment = Alignment(horizontal="left", vertical="center")
@@ -440,7 +461,7 @@ def get_relatorio_geral_excel(instituicao: str = "todas", trilha: str = TRILHA_P
     ws_resumo["A2"].font = Font(name="Arial", size=9, italic=True, color="666666")
 
     header_row = 4
-    for col, texto in enumerate(["Escola", "Total de Alunos", "Engajados", "Concluintes", "Em Alerta", "Engajamento"], start=1):
+    for col, texto in enumerate([rotulo, "Total de Alunos", "Engajados", "Concluintes", "Em Alerta", "Engajamento"], start=1):
         celula = ws_resumo.cell(row=header_row, column=col, value=texto)
         celula.font = Font(name="Arial", bold=True, color="FFFFFF")
         celula.fill = PatternFill("solid", fgColor=NAVY.lstrip("#"))
@@ -462,7 +483,12 @@ def get_relatorio_geral_excel(instituicao: str = "todas", trilha: str = TRILHA_P
 
     # --- Aba 2: Todos os Alunos ---
     ws_alunos = wb.create_sheet("Todos os Alunos")
+    # CVP não tem escola: a coluna simplesmente não existe (desloca = 1
+    # empurra as demais uma coluna pra esquerda).
     cabecalhos = ["Escola", "Turma", "#", "Estudante", "Login", "Progresso", "Módulo", "Status", "Alerta", "Concluído em"]
+    larguras = [28, 22, 5, 28, 20, 12, 32, 14, 22, 16]
+    desloca = 0 if usa_escola else 1
+    cabecalhos, larguras = cabecalhos[desloca:], larguras[desloca:]
     for col, texto in enumerate(cabecalhos, start=1):
         celula = ws_alunos.cell(row=1, column=col, value=texto)
         celula.font = Font(name="Arial", bold=True, color="FFFFFF")
@@ -470,22 +496,23 @@ def get_relatorio_geral_excel(instituicao: str = "todas", trilha: str = TRILHA_P
         celula.alignment = Alignment(horizontal="center")
 
     for i, a in enumerate(dados["alunos"], start=2):
-        ws_alunos.cell(row=i, column=1, value=a["escola"]).font = Font(name="Arial")
-        ws_alunos.cell(row=i, column=2, value=a["turma"]).font = Font(name="Arial")
-        ws_alunos.cell(row=i, column=3, value=a["posicao_na_turma"]).font = Font(name="Arial")
-        ws_alunos.cell(row=i, column=4, value=a["nome"]).font = Font(name="Arial")
-        ws_alunos.cell(row=i, column=5, value=a["login"]).font = Font(name="Arial")
-        celula_pct = ws_alunos.cell(row=i, column=6, value=a["progresso_pct"] / 100)
+        if usa_escola:
+            ws_alunos.cell(row=i, column=1, value=a["escola"]).font = Font(name="Arial")
+        ws_alunos.cell(row=i, column=2 - desloca, value=a["turma"]).font = Font(name="Arial")
+        ws_alunos.cell(row=i, column=3 - desloca, value=a["posicao_na_turma"]).font = Font(name="Arial")
+        ws_alunos.cell(row=i, column=4 - desloca, value=a["nome"]).font = Font(name="Arial")
+        ws_alunos.cell(row=i, column=5 - desloca, value=a["login"]).font = Font(name="Arial")
+        celula_pct = ws_alunos.cell(row=i, column=6 - desloca, value=a["progresso_pct"] / 100)
         celula_pct.number_format = "0.0%"
         celula_pct.font = Font(name="Arial")
-        ws_alunos.cell(row=i, column=7, value=a["modulo"]).font = Font(name="Arial")
-        ws_alunos.cell(row=i, column=8, value=a["status"]).font = Font(name="Arial")
-        celula_alerta = ws_alunos.cell(row=i, column=9, value=a["motivo_alerta"] or "—")
+        ws_alunos.cell(row=i, column=7 - desloca, value=a["modulo"]).font = Font(name="Arial")
+        ws_alunos.cell(row=i, column=8 - desloca, value=a["status"]).font = Font(name="Arial")
+        celula_alerta = ws_alunos.cell(row=i, column=9 - desloca, value=a["motivo_alerta"] or "—")
         celula_alerta.font = Font(name="Arial", color="DC2626" if a["alerta_inatividade"] else "000000")
-        ws_alunos.cell(row=i, column=10, value=a["concluido_em"]).font = Font(name="Arial")
+        ws_alunos.cell(row=i, column=10 - desloca, value=a["concluido_em"]).font = Font(name="Arial")
 
     ws_alunos.freeze_panes = "A2"
-    for idx, largura in enumerate([28, 22, 5, 28, 20, 12, 32, 14, 22, 16], start=1):
+    for idx, largura in enumerate(larguras, start=1):
         ws_alunos.column_dimensions[get_column_letter(idx)].width = largura
 
     buffer = io.BytesIO()

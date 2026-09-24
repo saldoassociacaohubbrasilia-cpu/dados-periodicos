@@ -8,9 +8,11 @@ from app.models import MetricSnapshot, Student, School, Turma, StudentProgress
 from app.schemas import OverviewOut, TrailShareOut
 from app.institutions import (
     normalize_institution, get_institution, SCHOOL_COORDINATES,
-    get_school_display_name, is_excluded_group,
+    get_school_display_name, is_excluded_group, curso_usa_escola,
 )
-from app.ingestion.transform import calcular_alerta_aluno, DIAS_LIMITE_INATIVIDADE
+from app.ingestion.transform import (
+    calcular_alerta_aluno, carregar_categorias_por_grupo, DIAS_LIMITE_INATIVIDADE,
+)
 from app.auth import get_current_user, require_role
 
 # dependencies=[...] no nível do router protege TODO endpoint aqui —
@@ -62,13 +64,17 @@ def _latest_date_for_trilha(db: Session, trilha_id: str, institution: str):
     dentro de rebuild_metrics, 'escola' é o último rollup gravado por
     trilha (depois de geral, módulo e turma), então só sobrevive numa
     rodada que realmente terminou — nunca num lote interrompido no
-    meio."""
+    meio.
+
+    Curso sem escola (CVP) não grava rollup 'escola' — nele o marcador de
+    lote completo é o rollup 'turma', o último gravado nesse caso."""
+    scope_final = "escola" if curso_usa_escola(trilha_id) else "turma"
     return db.execute(
         select(func.max(MetricSnapshot.snapshot_date))
         .where(
             MetricSnapshot.trilha_id == trilha_id,
             MetricSnapshot.institution == institution,
-            MetricSnapshot.scope_type == "escola",
+            MetricSnapshot.scope_type == scope_final,
         )
     ).scalar()
 
@@ -156,10 +162,12 @@ def get_full_dashboard(instituicao: str = "todas", trilha: str = TRILHA_PADRAO, 
         for r in modulo_rows
     ]
 
+    usa_escola = curso_usa_escola(trilha)
     turmas = [
         {
             "nome": r.scope_label,
-            "escola": get_school_display_name(r.scope_label),
+            # CVP não tem escola — None, nunca o nome do grupo no lugar.
+            "escola": get_school_display_name(r.scope_label) if usa_escola else None,
             "total_alunos": r.inscritos,
             "alunos_engajados": r.engajados,
             "progresso_medio": r.taxa_ativacao,
@@ -294,6 +302,7 @@ def get_alertas(instituicao: str = "todas", db: Session = Depends(get_db)):
     em /report/logs (ver app/ludos_client.py:LOGIN_LOG_PATH).
     """
     inst_filtro = normalize_institution(instituicao)
+    categorias = carregar_categorias_por_grupo(db)
 
     # Join único com Turma em vez de um db.get(Turma, ...) por aluno dentro
     # do loop — evita N+1 queries (uma por aluno) nessa listagem.
@@ -310,17 +319,22 @@ def get_alertas(instituicao: str = "todas", db: Session = Depends(get_db)):
         if aluno.account_status == "BLOCKED" or aluno.is_staff:
             continue
 
-        dias_sem_acesso, alerta, motivo = calcular_alerta_aluno(aluno.last_access)
-        if not alerta:
-            continue
-
         nome_turma = turma.name if turma else "Sem Turma"
-        inst_aluno = get_institution(nome_turma)
+        inst_aluno = get_institution(nome_turma, categorias)
 
         if inst_filtro != "todas" and inst_aluno != inst_filtro:
             continue
 
-        escola_aluno = get_school_display_name(nome_turma)
+        # CVP: conta INACTIVE = cadastrada mas ainda não ativada ("aguardando
+        # ativação") — não é abandono, então não entra no alerta.
+        if inst_aluno == "cvp" and aluno.account_status == "INACTIVE":
+            continue
+
+        dias_sem_acesso, alerta, motivo = calcular_alerta_aluno(aluno.last_access)
+        if not alerta:
+            continue
+
+        escola_aluno = get_school_display_name(nome_turma) if inst_aluno != "cvp" else None
 
         alertas.append({
             "nome": aluno.name or aluno.login,
@@ -337,11 +351,12 @@ def get_alertas(instituicao: str = "todas", db: Session = Depends(get_db)):
     # Agregado por escola — "essa escola está em alerta porque X de Y
     # alunos estão sem acesso" precisa de nunca_acessou/inativo_recente
     # separados (nunca_acessou não tem "dias_sem_acesso" pra comparar
-    # com o limite, então não dá pra derivar um do outro).
+    # com o limite, então não dá pra derivar um do outro). No CVP (sem
+    # escola) o agrupamento é pelo grupo/turma.
     por_escola: dict[str, dict] = {}
     for a in alertas:
         resumo = por_escola.setdefault(
-            a["escola"], {"total_em_alerta": 0, "nunca_acessou": 0, "inativo_recente": 0}
+            a["escola"] or a["turma"], {"total_em_alerta": 0, "nunca_acessou": 0, "inativo_recente": 0}
         )
         resumo["total_em_alerta"] += 1
         if a["motivo_alerta"] == "Nunca acessou":
@@ -373,6 +388,7 @@ def get_usuarios_ativos_semana(instituicao: str = "todas", db: Session = Depends
     7 dias.
     """
     inst_filtro = normalize_institution(instituicao)
+    categorias = carregar_categorias_por_grupo(db)
     agora = datetime.now(timezone.utc)
     limite_semana_atual = agora - timedelta(days=7)
     limite_semana_anterior = agora - timedelta(days=14)
@@ -403,7 +419,8 @@ def get_usuarios_ativos_semana(instituicao: str = "todas", db: Session = Depends
     for last_access, turma_nome in rows:
         if is_excluded_group(turma_nome):
             continue
-        if inst_filtro != "todas" and get_institution(turma_nome) != inst_filtro:
+        inst_aluno = get_institution(turma_nome, categorias)
+        if inst_filtro != "todas" and inst_aluno != inst_filtro:
             continue
         total_considerados += 1
         ativo = last_access is not None
@@ -414,7 +431,8 @@ def get_usuarios_ativos_semana(instituicao: str = "todas", db: Session = Depends
             elif last_access >= limite_semana_anterior:
                 ativos_semana_anterior += 1
 
-        if turma_nome and turma_nome != "Sem Turma":
+        # Ranking por escola é só da SEEDF — CVP não tem escola.
+        if inst_aluno != "cvp" and turma_nome and turma_nome != "Sem Turma":
             escola_nome = get_school_display_name(turma_nome)
             stat = por_escola.setdefault(escola_nome, {"inscritos": 0, "ativos": 0})
             stat["inscritos"] += 1

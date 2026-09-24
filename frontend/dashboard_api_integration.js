@@ -416,7 +416,7 @@ function renderizarLinhasTurmas(turmas, termoBusca) {
         const tr = document.createElement('tr');
         tr.innerHTML = `
             <td style="font-weight: 700; color: ${NAVY};">${escapeHtml(t.nome)}</td>
-            <td>${escapeHtml(t.escola)}</td>
+            <td class="col-escola">${escapeHtml(t.escola)}</td>
             <td class="num">${fmtInt(t.total_alunos)}</td>
             <td class="num">${fmtInt(t.alunos_engajados)}</td>
             <td>
@@ -497,7 +497,8 @@ function renderizarResumoAlertasPorEscola(porEscola, escolasInfo) {
     const totalDaEscola = inscritosPorEscola[piorNome];
     const trechoTotal = totalDaEscola ? ` de ${fmtInt(totalDaEscola)} inscritos` : '';
     if (elInsight) {
-        elInsight.innerHTML = `<strong>${escapeHtml(piorNome)}</strong> é a escola com mais alertas: ${fmtInt(piorResumo.total_em_alerta)}${trechoTotal} estudantes nunca acessaram ou estão sem acesso há mais de 10 dias.`;
+        const oQue = document.body.classList.contains('sem-escola') ? 'o grupo' : 'a escola';
+        elInsight.innerHTML = `<strong>${escapeHtml(piorNome)}</strong> é ${oQue} com mais alertas: ${fmtInt(piorResumo.total_em_alerta)}${trechoTotal} estudantes nunca acessaram ou estão sem acesso há mais de 10 dias.`;
         elInsight.hidden = false;
     }
 
@@ -557,7 +558,7 @@ function renderizarLinhasAlertas(lista, termoBusca) {
         const rotuloInstituicao = a.instituicao === 'cvp' ? 'CVP' : 'Secretaria de Educação';
         tr.innerHTML = `
             <td style="font-weight:600;">${escapeHtml(a.nome)}</td>
-            <td>${escapeHtml(a.escola)}</td>
+            <td class="col-escola">${escapeHtml(a.escola)}</td>
             <td>${escapeHtml(a.turma)}</td>
             <td>${rotuloInstituicao}</td>
             <td><span class="pill-status pill-alerta">${escapeHtml(a.motivo_alerta)}</span></td>
@@ -673,12 +674,24 @@ function renderizarGraficoAtivosEscola(ranking) {
     });
 }
 
-// A Trilha Pocket (id 43) não tem estrutura de escola na Ludos — só uma
-// turma de teste hoje. Ranking por escola e mapa não fazem sentido pra
-// ela; escondemos e deixamos a Visão Geral só com os indicadores gerais
-// e a distribuição por módulo.
+// Cursos sem estrutura de escola: a Trilha Pocket (id 43, só uma turma de
+// teste hoje) e os cursos do CVP (45 = CVP 46, 46 = ONGs — ver
+// app/institutions.py:CURSOS). Ranking por escola e mapa não fazem sentido
+// pra eles; escondemos e deixamos a Visão Geral só com os indicadores
+// gerais e a distribuição por módulo.
+const TRILHAS_CVP = ['45', '46'];
+
 function aplicarModoTrilha(trilhaId) {
-    const ehPocket = trilhaId === '43';
+    const ehPocket = trilhaId === '43' || TRILHAS_CVP.includes(trilhaId);
+    // CVP: além de esconder as seções, some a coluna "Escola" das tabelas
+    // e os títulos que falam em escola passam a falar em grupo — o texto
+    // do CVP fica em data-rotulo-cvp, o original é guardado pra voltar.
+    const ehCvp = TRILHAS_CVP.includes(trilhaId);
+    document.body.classList.toggle('sem-escola', ehCvp);
+    document.querySelectorAll('[data-rotulo-cvp]').forEach(el => {
+        if (el.dataset.rotuloOriginal === undefined) el.dataset.rotuloOriginal = el.textContent;
+        el.textContent = ehCvp ? el.dataset.rotuloCvp : el.dataset.rotuloOriginal;
+    });
     const cardEscolas = document.getElementById('kpi-card-escolas');
     const secaoRanking = document.getElementById('secao-ranking-escola');
     const secaoAtivosEscola = document.getElementById('secao-ativos-escola');
@@ -714,7 +727,12 @@ async function carregarDashboard(instituicaoId, trilhaId) {
         const dados = await res.json();
 
         carregarUsuariosAtivos(instituicaoId);
-        carregarAlertas(instituicaoId, dados.escolas);
+        // % em alerta precisa do total de inscritos por agrupamento: escola
+        // na SEEDF, grupo/turma no CVP (que não tem escola).
+        const inscritosPorAgrupamento = TRILHAS_CVP.includes(trilhaId)
+            ? (dados.turmas || []).map(t => ({ nome: t.nome, inscritos: t.total_alunos }))
+            : dados.escolas;
+        carregarAlertas(instituicaoId, inscritosPorAgrupamento);
 
         setKpi('kpi-escolas', fmtInt(dados.kpis.escolas));
         setKpi('kpi-turmas', fmtInt((dados.turmas || []).length));
