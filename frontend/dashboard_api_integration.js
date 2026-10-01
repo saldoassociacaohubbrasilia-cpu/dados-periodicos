@@ -704,6 +704,24 @@ function aplicarModoTrilha(trilhaId) {
     if (grid) grid.classList.toggle('modo-pocket', ehPocket);
 }
 
+// "Atualizado em 01/10 às 17:19" no topo — data do lote de dados que está
+// na tela (vem do backend), não a hora em que a página foi aberta. Sem
+// isso não dá pra saber se um número parado é de hoje ou está velho.
+function mostrarAtualizadoEm(isoData) {
+    const el = document.getElementById('atualizado-em');
+    if (!el) return;
+    if (!isoData) {
+        el.textContent = 'sem dados sincronizados';
+        return;
+    }
+    const d = new Date(isoData);
+    const fuso = { timeZone: 'America/Sao_Paulo' };
+    const data = d.toLocaleDateString('pt-BR', { ...fuso, day: '2-digit', month: '2-digit' });
+    const hora = d.toLocaleTimeString('pt-BR', { ...fuso, hour: '2-digit', minute: '2-digit' });
+    el.textContent = `atualizado em ${data} às ${hora}`;
+    el.title = d.toLocaleString('pt-BR', fuso);
+}
+
 // --- Função Principal: Buscar e Atualizar o Dashboard ---
 async function carregarDashboard(instituicaoId, trilhaId) {
     aplicarModoTrilha(trilhaId);
@@ -726,6 +744,7 @@ async function carregarDashboard(instituicaoId, trilhaId) {
 
         const dados = await res.json();
 
+        mostrarAtualizadoEm(dados.atualizado_em);
         carregarUsuariosAtivos(instituicaoId);
         // % em alerta precisa do total de inscritos por agrupamento: escola
         // na SEEDF, grupo/turma no CVP (que não tem escola).

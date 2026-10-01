@@ -32,6 +32,7 @@ EMPTY_DASHBOARD = {
         "taxa_engajamento": 0.0, "taxa_retencao": 0.0, "pontuacao_media": 0.0,
     },
     "escolas": [], "modulos": [], "turmas": [], "destaque": {},
+    "atualizado_em": None,
 }
 
 
@@ -187,6 +188,9 @@ def get_full_dashboard(instituicao: str = "todas", trilha: str = TRILHA_PADRAO, 
         "modulos": modulos,
         "turmas": turmas,
         "destaque": destaque,
+        # Data do lote mostrado (não a hora da requisição) — o frontend
+        # exibe isso no topo pra dar pra saber se o número é de hoje.
+        "atualizado_em": latest_date.isoformat(),
     }
 
 
