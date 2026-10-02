@@ -162,6 +162,7 @@ const PALETA = [TEAL, ORANGE, PINK, PURPLE, '#10B981', NAVY];
 let chartEscolas = null;
 let chartTrilhas = null;
 let chartAtivosEscola = null;
+let chartSemanal = null;
 let mapaGeografico = null;
 let marcadoresMapa = [];
 let ALERTAS_ATUAIS = []; // última lista carregada — a busca filtra em cima dela, sem refazer a chamada
@@ -674,6 +675,110 @@ function renderizarGraficoAtivosEscola(ranking) {
     });
 }
 
+// Engajamento por semana: estudantes com pelo menos uma atividade na
+// trilha em cada semana. A semana atual ainda não fechou, então o último
+// trecho da linha é tracejado e o ponto fica vazado — senão uma queda que
+// é só "a semana ainda não acabou" parece queda real.
+async function carregarEngajamentoSemanal(instituicaoId, trilhaId) {
+    let semanas = [];
+    try {
+        const res = await fetchAutenticado(`${API_BASE}/engajamento-semanal?instituicao=${instituicaoId}&trilha=${trilhaId}`);
+        if (!res.ok) throw new Error(`Erro na API: ${res.status}`);
+        semanas = (await res.json()).semanas || [];
+    } catch (err) {
+        console.error('Falha ao carregar engajamento semanal:', err);
+    }
+    renderizarGraficoSemanal(semanas);
+}
+
+function renderizarGraficoSemanal(semanas) {
+    alternarEstadoVazio('cEngajamentoSemanal', semanas.length > 0);
+    if (chartSemanal) { chartSemanal.destroy(); chartSemanal = null; }
+
+    const insight = document.getElementById('insight-semanal');
+    if (insight) insight.hidden = true;
+    if (!semanas.length) return;
+
+    const rotulo = (s) => {
+        const [, mes, dia] = s.inicio.split('-');
+        return `${dia}/${mes}`;
+    };
+    const ultimaIdx = semanas.length - 1;
+    const parcial = (i) => semanas[i].parcial;
+
+    chartSemanal = new Chart(document.getElementById('cEngajamentoSemanal'), {
+        type: 'line',
+        data: {
+            labels: semanas.map(s => `Sem. ${rotulo(s)}`),
+            datasets: [{
+                label: 'Estudantes engajados',
+                data: semanas.map(s => s.estudantes),
+                borderColor: TEAL,
+                backgroundColor: TEAL,
+                borderWidth: 2,
+                tension: 0,
+                pointRadius: 5,
+                pointHoverRadius: 7,
+                pointBorderWidth: 2,
+                pointBorderColor: TEAL,
+                pointBackgroundColor: semanas.map((_, i) => parcial(i) ? '#FFFFFF' : TEAL),
+                segment: {
+                    borderDash: ctx => parcial(ctx.p1DataIndex) ? [5, 4] : undefined,
+                },
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        title: items => {
+                            const s = semanas[items[0].dataIndex];
+                            const fim = new Date(`${s.inicio}T12:00:00`);
+                            fim.setDate(fim.getDate() + 6);
+                            const fimTxt = fim.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+                            return `Semana ${rotulo(s)} a ${fimTxt}${s.parcial ? ' (em andamento)' : ''}`;
+                        },
+                        label: item => `${fmtInt(item.raw)} estudantes engajados`,
+                        afterLabel: item => `${fmtInt(semanas[item.dataIndex].atividades)} atividades feitas`,
+                    }
+                }
+            },
+            scales: {
+                // offset: meia semana de folga nas pontas, pra o primeiro/último rótulo não cortar.
+                x: { grid: { display: false }, offset: true },
+                y: { grid: { color: '#E4E6F0' }, beginAtZero: true, ticks: { precision: 0 } }
+            }
+        }
+    });
+
+    // Frase curta comparando a última semana FECHADA com a anterior — a
+    // semana em andamento não entra na comparação, só é citada.
+    if (!insight) return;
+    const fechadas = semanas.filter(s => !s.parcial);
+    const partes = [];
+    if (fechadas.length >= 2) {
+        const atual = fechadas[fechadas.length - 1], anterior = fechadas[fechadas.length - 2];
+        let comp = '';
+        if (anterior.estudantes > 0) {
+            const v = Math.round(100 * (atual.estudantes - anterior.estudantes) / anterior.estudantes);
+            comp = ` (${v >= 0 ? '+' : ''}${v}% vs. semana anterior)`;
+        }
+        partes.push(`Última semana fechada (${rotulo(atual)}): ${fmtInt(atual.estudantes)} estudantes engajados${comp}.`);
+    }
+    const pico = semanas.reduce((a, b) => (b.estudantes > a.estudantes ? b : a));
+    const ultimaFechada = fechadas[fechadas.length - 1];
+    if (fechadas.length < 2 || pico !== ultimaFechada) partes.push(`Semana com mais engajamento: ${rotulo(pico)}, com ${fmtInt(pico.estudantes)} estudantes.`);
+    if (parcial(ultimaIdx)) {
+        partes.push(`Semana atual (${rotulo(semanas[ultimaIdx])}, em andamento): ${fmtInt(semanas[ultimaIdx].estudantes)} até agora.`);
+    }
+    insight.textContent = partes.join(' ');
+    insight.hidden = false;
+}
+
 // Cursos sem estrutura de escola: a Trilha Pocket (id 43, só uma turma de
 // teste hoje) e os cursos do CVP (45 = CVP 46, 46 = ONGs — ver
 // app/institutions.py:CURSOS). Ranking por escola e mapa não fazem sentido
@@ -746,6 +851,7 @@ async function carregarDashboard(instituicaoId, trilhaId) {
 
         mostrarAtualizadoEm(dados.atualizado_em);
         carregarUsuariosAtivos(instituicaoId);
+        carregarEngajamentoSemanal(instituicaoId, trilhaId);
         // % em alerta precisa do total de inscritos por agrupamento: escola
         // na SEEDF, grupo/turma no CVP (que não tem escola).
         const inscritosPorAgrupamento = TRILHAS_CVP.includes(trilhaId)

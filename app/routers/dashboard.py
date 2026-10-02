@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
@@ -12,6 +13,7 @@ from app.institutions import (
 )
 from app.ingestion.transform import (
     calcular_alerta_aluno, carregar_categorias_por_grupo, DIAS_LIMITE_INATIVIDADE,
+    _latest_payload,
 )
 from app.auth import get_current_user, require_role
 
@@ -473,7 +475,70 @@ def get_usuarios_ativos_semana(instituicao: str = "todas", db: Session = Depends
     }
 
 
-@router.post("/sync/run", dependencies=[Depends(require_role("admin", "gestor"))])
+@router.get("/engajamento-semanal")
+def get_engajamento_semanal(instituicao: str = "todas", trilha: str = TRILHA_PADRAO, db: Session = Depends(get_db)):
+    """
+    Quantos estudantes fizeram pelo menos uma atividade da trilha em cada
+    semana (segunda a domingo), da primeira semana com atividade até a
+    atual — semana sem ninguém entra com 0, pra queda aparecer no gráfico.
+
+    Vem de /report/play/course, que traz TODAS as jogadas de cada aluno
+    com data (não é janela móvel como o /report/logs), então dá pra
+    reconstruir semanas passadas sem ter guardado histórico à parte.
+    Mesmo filtro de aluno do resto do dashboard: nunca Bloqueado, nunca
+    staff/conta de teste, nunca grupo excluído.
+    """
+    inst_filtro = normalize_institution(instituicao)
+    categorias = carregar_categorias_por_grupo(db)
+    alunos = {
+        external_id: turma_nome
+        for external_id, turma_nome in db.execute(
+            select(Student.external_id, Turma.name)
+            .outerjoin(Turma, Turma.id == Student.turma_id)
+            .where(Student.account_status != "BLOCKED", Student.is_staff.is_(False))
+        ).all()
+        if not is_excluded_group(turma_nome)
+        and (inst_filtro == "todas" or get_institution(turma_nome, categorias) == inst_filtro)
+    }
+
+    estudantes_por_semana: dict = {}
+    atividades_por_semana: dict = {}
+    for player in _latest_payload(db, f"/report/play/course/{trilha}") or []:
+        external_id = str(player.get("playerId") or "")
+        if external_id not in alunos:
+            continue
+        for modulo in player.get("modules") or []:
+            for atividade in modulo.get("activities") or []:
+                for jogada in atividade.get("plays") or []:
+                    try:
+                        # Data local da Ludos (sem fuso), já em horário de Brasília.
+                        dia = datetime.fromisoformat(str(jogada.get("startDate"))[:19]).date()
+                    except ValueError:
+                        continue
+                    segunda = dia - timedelta(days=dia.weekday())
+                    estudantes_por_semana.setdefault(segunda, set()).add(external_id)
+                    atividades_por_semana[segunda] = atividades_por_semana.get(segunda, 0) + 1
+
+    if not estudantes_por_semana:
+        return {"semanas": []}
+
+    hoje = datetime.now(ZoneInfo("America/Sao_Paulo")).date()
+    semana_atual = hoje - timedelta(days=hoje.weekday())
+    semana = min(estudantes_por_semana)
+    semanas = []
+    while semana <= max(semana_atual, max(estudantes_por_semana)):
+        semanas.append({
+            "inicio": semana.isoformat(),
+            "estudantes": len(estudantes_por_semana.get(semana, ())),
+            "atividades": atividades_por_semana.get(semana, 0),
+            # Semana corrente ainda não fechou — o frontend avisa que é parcial.
+            "parcial": semana == semana_atual,
+        })
+        semana += timedelta(days=7)
+    return {"semanas": semanas}
+
+
+@router.post("/sync/run",dependencies=[Depends(require_role("admin", "gestor"))])
 def trigger_manual_sync():
     from app.ingestion.sync_job import run_sync
     executou = run_sync()

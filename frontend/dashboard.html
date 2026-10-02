@@ -404,6 +404,22 @@
             </div>
         </div>
 
+        <div class="secao" id="secao-engajamento-semanal">
+            <div class="secao-cabecalho">
+                <h3 class="secao-titulo" style="--accent: var(--teal)">Engajamento por Semana</h3>
+                <button class="btn-grafico-pdf" data-canvas="cEngajamentoSemanal" data-titulo="Engajamento por Semana">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 19h16"/></svg>
+                    PDF
+                </button>
+            </div>
+            <p class="secao-calc">Cálculo: estudantes que fizeram pelo menos uma atividade da trilha em cada semana (segunda a domingo). A semana atual ainda está em andamento.</p>
+            <canvas id="cEngajamentoSemanal"></canvas>
+            <div class="empty-state chart-empty" id="empty-cEngajamentoSemanal" hidden>
+                Nenhuma atividade registrada nessa trilha ainda.
+            </div>
+            <div class="caixa caixa-insight" id="insight-semanal" hidden></div>
+        </div>
+
         <div class="graficos-grid" id="graficos-grid-visao">
             <div class="secao" id="secao-ranking-escola">
                 <div class="secao-cabecalho">
