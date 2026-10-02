@@ -165,7 +165,6 @@
         /* Trilha Pocket não tem conceito de escola — o ranking por
            escola some, e o gráfico de módulo (que sobra sozinho) ocupa
            a linha inteira em vez de ficar espremido numa coluna só. */
-        .graficos-grid.modo-pocket { grid-template-columns: 1fr; }
         canvas { max-height: 280px; }
         /* Legenda do gráfico de módulos em HTML (ver renderizarGraficos em
            dashboard_api_integration.js) — cresce com a lista, sem cortar. */
@@ -420,22 +419,7 @@
             <div class="caixa caixa-insight" id="insight-semanal" hidden></div>
         </div>
 
-        <div class="graficos-grid" id="graficos-grid-visao">
-            <div class="secao" id="secao-ranking-escola">
-                <div class="secao-cabecalho">
-                    <h3 class="secao-titulo" style="--accent: var(--teal)">Ranking de Engajamento por Escola</h3>
-                    <button class="btn-grafico-pdf" data-canvas="cEngajamentoEscola" data-titulo="Ranking de Engajamento por Escola">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 19h16"/></svg>
-                        PDF
-                    </button>
-                </div>
-                <p class="secao-calc">Cálculo: engajamento da escola = estudantes engajados ÷ estudantes inscritos naquela escola</p>
-                <canvas id="cEngajamentoEscola"></canvas>
-                <div class="empty-state chart-empty" id="empty-cEngajamentoEscola" hidden>
-                    Nenhuma escola/turma com dado disponível para esse filtro ainda.
-                </div>
-                <div class="caixa caixa-insight" id="insight-escolas" hidden></div>
-            </div>
+        <div id="graficos-grid-visao">
             <div class="secao">
                 <div class="secao-cabecalho">
                     <h3 class="secao-titulo" style="--accent: var(--pink)">Distribuição de Estudantes por Módulo</h3>
@@ -467,7 +451,7 @@
             <div class="empty-state chart-empty" id="empty-cAtivosEscola" hidden>
                 Nenhuma escola com dado disponível para esse filtro ainda.
             </div>
-            <div class="caixa caixa-nota">Diferente do Ranking de Engajamento acima: aqui conta quem já entrou na plataforma, mesmo que ainda não tenha começado a trilha.</div>
+            <div class="caixa caixa-nota">Aqui conta quem já entrou na plataforma, mesmo que ainda não tenha começado a trilha.</div>
         </div>
 
         <div class="secao" id="secao-mapa">

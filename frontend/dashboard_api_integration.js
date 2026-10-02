@@ -159,7 +159,6 @@ Chart.defaults.color = '#6B7192';
 
 const PALETA = [TEAL, ORANGE, PINK, PURPLE, '#10B981', NAVY];
 
-let chartEscolas = null;
 let chartTrilhas = null;
 let chartAtivosEscola = null;
 let chartSemanal = null;
@@ -270,63 +269,11 @@ function alternarEstadoVazio(idCanvas, temDado) {
     if (vazio) vazio.hidden = temDado;
 }
 
-// Gera uma frase curta e honesta a partir do ranking de escolas — nunca
-// inventa número, só descreve o que já está no gráfico.
-function gerarInsightEscolas(escolas) {
-    const el = document.getElementById('insight-escolas');
-    if (!el) return;
-    if (!escolas.length) { el.hidden = true; return; }
-
-    const comEngajamento = escolas.filter(e => e.engajados > 0);
-    const lider = [...escolas].sort((a, b) => b.engajamento_pct - a.engajamento_pct)[0];
-
-    const nomeLider = escapeHtml(lider.nome);
-    let texto;
-    if (comEngajamento.length === 0) {
-        texto = `Nenhuma escola tem estudante engajado ainda neste filtro — os ${escolas.length} inscritos ainda não começaram a trilha.`;
-    } else if (comEngajamento.length === 1) {
-        texto = `<strong>${nomeLider}</strong> concentra todo o engajamento real até agora (${fmtPct(lider.engajamento_pct)}) — as outras ${escolas.length - 1} escolas têm estudantes inscritos, mas nenhum começou a trilha.`;
-    } else {
-        texto = `<strong>${nomeLider}</strong> lidera com ${fmtPct(lider.engajamento_pct)} de engajamento, entre ${comEngajamento.length} de ${escolas.length} escolas já com algum estudante engajado.`;
-    }
-    el.innerHTML = texto;
-    el.hidden = false;
-}
-
 // --- Renderização de Gráficos (Chart.js) ---
-function renderizarGraficos(dadosEscolas, dadosModulos) {
-    alternarEstadoVazio('cEngajamentoEscola', dadosEscolas.length > 0);
+function renderizarGraficos(dadosModulos) {
     alternarEstadoVazio('cTrilhas', dadosModulos.length > 0);
-    gerarInsightEscolas(dadosEscolas);
 
-    if (chartEscolas) { chartEscolas.destroy(); chartEscolas = null; }
     if (chartTrilhas) { chartTrilhas.destroy(); chartTrilhas = null; }
-
-    if (dadosEscolas.length) {
-        const escolasRankeadas = [...dadosEscolas].sort((a, b) => b.engajamento_pct - a.engajamento_pct);
-        chartEscolas = new Chart(document.getElementById('cEngajamentoEscola'), {
-            type: 'bar',
-            data: {
-                labels: escolasRankeadas.map(e => e.nome),
-                datasets: [{
-                    label: '% de Engajamento',
-                    data: escolasRankeadas.map(e => e.engajamento_pct),
-                    backgroundColor: escolasRankeadas.map((_, i) => PALETA[i % PALETA.length]),
-                    borderRadius: 8,
-                    maxBarThickness: 42
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: { legend: { display: false } },
-                scales: {
-                    x: { grid: { display: false } },
-                    y: { grid: { color: '#E4E6F0' }, beginAtZero: true, max: 100 }
-                }
-            }
-        });
-    }
 
     const legendaModulos = document.getElementById('legenda-cTrilhas');
     if (legendaModulos) legendaModulos.innerHTML = '';
@@ -642,7 +589,7 @@ async function carregarUsuariosAtivos(instituicaoId) {
     }
 }
 
-// Diferente do Ranking de Engajamento (progresso na trilha), esse conta
+// Diferente do engajamento (progresso na trilha), esse conta
 // quem já acessou a plataforma alguma vez — independe de trilha, então
 // mostra escola que acabou de entrar e já tem estudante logando, mesmo
 // que ninguém ali tenha começado o conteúdo da trilha ainda.
@@ -798,15 +745,11 @@ function aplicarModoTrilha(trilhaId) {
         el.textContent = ehCvp ? el.dataset.rotuloCvp : el.dataset.rotuloOriginal;
     });
     const cardEscolas = document.getElementById('kpi-card-escolas');
-    const secaoRanking = document.getElementById('secao-ranking-escola');
     const secaoAtivosEscola = document.getElementById('secao-ativos-escola');
     const secaoMapa = document.getElementById('secao-mapa');
-    const grid = document.getElementById('graficos-grid-visao');
     if (cardEscolas) cardEscolas.hidden = ehPocket;
-    if (secaoRanking) secaoRanking.hidden = ehPocket;
     if (secaoAtivosEscola) secaoAtivosEscola.hidden = ehPocket;
     if (secaoMapa) secaoMapa.hidden = ehPocket;
-    if (grid) grid.classList.toggle('modo-pocket', ehPocket);
 }
 
 // "Atualizado em 01/10 às 17:19" no topo — data do lote de dados que está
@@ -873,7 +816,7 @@ async function carregarDashboard(instituicaoId, trilhaId) {
         setKpi('destaque-modulo', destaque.modulo_destaque || '—');
 
         atualizarMapa(dados.escolas, instituicaoId);
-        renderizarGraficos(dados.escolas, dados.modulos);
+        renderizarGraficos(dados.modulos);
         renderizarTabelaTurmas(dados.turmas);
 
     } catch (err) {
