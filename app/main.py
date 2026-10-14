@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import dashboard, turma_report, auth, users
+from app.routers import dashboard, turma_report, auth, users, uso_plataforma
 from app.scheduler import start_scheduler
 from app.config import settings
 
@@ -48,6 +48,7 @@ app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(dashboard.router)
 app.include_router(turma_report.router)
+app.include_router(uso_plataforma.router)
 
 
 @app.get("/health")

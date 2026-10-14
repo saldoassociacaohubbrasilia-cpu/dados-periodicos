@@ -2,4 +2,12 @@
 .venv/
 __pycache__/
 *.pyc
+credentials.json
+token.json
  
+# Chave da conta de servico do GA4 e planilhas geradas
+ga4-credenciais.json
+ga4_saldo_*.xlsx
+oauth-cliente.json
+client_secret_*.json
+ga4-credenciais-render.json

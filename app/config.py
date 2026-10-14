@@ -20,6 +20,19 @@ class Settings(BaseSettings):
     # de tendência histórica sem deixar a tabela crescer pra sempre.
     metric_snapshot_retention_days: int = 90
 
+    # Google Analytics 4 (uso da plataforma — ver app/ingestion/ga4_sync.py).
+    # ga4_credentials_json: o CONTEÚDO do JSON da credencial (conta de
+    # serviço, ou "authorized_user" de um login OAuth), colado inteiro na
+    # env var do Render. Vazio = usa a credencial padrão da máquina
+    # (`gcloud auth application-default login`), que serve pra rodar
+    # local; sem nenhuma das duas, o sync do GA4 só é pulado.
+    ga4_property_id: str = "557048713"
+    ga4_credentials_json: str = ""
+    # Primeiro dia com a tag instalada — o primeiro sync busca desde aqui.
+    ga4_data_inicio: str = "2026-10-09"
+    # Quantos dias pra trás cada sync rebusca (o GA4 ajusta dias recentes).
+    ga4_dias_reprocessar: int = 3
+
     # Login/autenticação. Sem default de propósito: sem essa variável
     # configurada (Render → Environment), a aplicação nem sobe — mais
     # seguro do que rodar com uma chave previsível.

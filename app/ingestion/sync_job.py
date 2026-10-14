@@ -8,6 +8,7 @@ from app.database import SessionLocal, engine
 from app.models import RawLudosSnapshot, SyncLog
 from app.ludos_client import LudosClient, LudosAPIError
 from app.ingestion.transform import rebuild_metrics, TRILHAS
+from app.ingestion.ga4_sync import sync_ga4
 
 # Data mais antiga considerada ao buscar /report/play/course (a Ludos exige
 # um período, não devolve "tudo" sem filtro de data) — bem anterior ao
@@ -104,6 +105,10 @@ def _run_sync_locked() -> None:
         _sync_play_course(db, client, courses_payload)
 
         rebuild_metrics(db)
+
+        # Por último: o GA4 é fonte separada e opcional, nunca atrasa nem
+        # bloqueia os KPIs da Ludos acima.
+        sync_ga4(db)
     finally:
         client.close()
         db.close()

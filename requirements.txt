@@ -13,3 +13,4 @@ openpyxl
 bcrypt
 PyJWT
 email-validator
+google-analytics-data

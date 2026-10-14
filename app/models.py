@@ -1,7 +1,7 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional
 
-from sqlalchemy import String, Integer, Float, DateTime, ForeignKey, func
+from sqlalchemy import String, Integer, Float, Date, DateTime, ForeignKey, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy import Table, Column
@@ -195,6 +195,37 @@ class MetricSnapshot(Base):
     taxa_conclusao: Mapped[float] = mapped_column(Float, default=0.0)
     taxa_retencao: Mapped[float] = mapped_column(Float, default=0.0)
     pontuacao_media: Mapped[float] = mapped_column(Float, default=0.0)
+
+
+class Ga4MetricaDiaria(Base):
+    """
+    Uso da plataforma vindo do Google Analytics 4 (tag da Ludos em
+    saldo.ludos.pro), uma linha por dia x recorte x valor da dimensão.
+    Recalculada a cada sync pros últimos dias (ver
+    app/ingestion/ga4_sync.py) — o GA4 ainda ajusta os números de dias
+    recentes, então nunca dá pra gravar um dia uma vez só e esquecer.
+
+    recorte:  'dia_hora'          -> dimensao = hora ("00".."23")
+              'dispositivo'       -> dimensao = desktop | mobile | tablet
+              'tela'              -> dimensao = nome da tela ("Cursos - Saldo+")
+              'novos_recorrentes' -> dimensao = new | returning
+
+    usuarios_ativos é por dia: somar vários dias conta a mesma pessoa
+    uma vez por dia em que ela acessou (usuários-dia), não pessoas únicas.
+    Sessões, visualizações e tempo de engajamento podem ser somados.
+    """
+    __tablename__ = "ga4_metrica_diaria"
+    __table_args__ = (UniqueConstraint("data", "recorte", "dimensao", name="uq_ga4_metrica_diaria"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    data: Mapped[date] = mapped_column(Date, index=True)
+    recorte: Mapped[str] = mapped_column(String(30), index=True)
+    dimensao: Mapped[str] = mapped_column(String(200))
+    usuarios_ativos: Mapped[int] = mapped_column(Integer, default=0)
+    sessoes: Mapped[int] = mapped_column(Integer, default=0)
+    visualizacoes: Mapped[int] = mapped_column(Integer, default=0)
+    tempo_engajamento_seg: Mapped[float] = mapped_column(Float, default=0.0)
+    atualizado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 # ======================================================================
